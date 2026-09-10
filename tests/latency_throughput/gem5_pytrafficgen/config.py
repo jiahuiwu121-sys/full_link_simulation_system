@@ -19,13 +19,6 @@ def _profile(dram_class, org_preset, timing_preset, controller_class):
 
 
 DRAM_PROFILES = {
-    "DDR3": _profile("DDR3", "DDR3_2Gb_x8", "DDR3_1600H", "GenericDDR"),
-    "DDR4": _profile("DDR4", "DDR4_8Gb_x8", "DDR4_2400R", "GenericDDR"),
-    "DDR5": _profile("DDR5", "DDR5_16Gb_x8", "DDR5_4800AN", "GenericDDR"),
-    "GDDR6": _profile("GDDR6", "GDDR6_8Gb_x16", "GDDR6_14000_1250mV_double", "GenericDDR"),
-    "GDDR7": _profile("GDDR7", "GDDR7_16Gb_x8", "GDDR7_28000_PAM3", "GDDR7"),
-    "HBM1": _profile("HBM1", "HBM1_2Gb", "HBM1_2Gbps", "HBM12"),
-    "HBM2": _profile("HBM2", "HBM2_2Gb", "HBM2_2000Mbps", "HBM12"),
     "HBM3": _profile("HBM3", "HBM3_8Gb_8hi", "HBM3_6400Mbps", "HBM34"),
     "HBM4": _profile("HBM4", "HBM4_32Gb_8Hi", "HBM4_8000Mbps", "HBM34"),
     "LPDDR5": _profile("LPDDR5", "LPDDR5_8Gb_x16", "LPDDR5_6400", "LPDDR5"),

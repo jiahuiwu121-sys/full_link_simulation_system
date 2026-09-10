@@ -26,7 +26,7 @@ class ControllerUnderTest:
     ALL = -1
 
     @classmethod
-    def make_generic_ddr(
+    def make_lpddr5(
         cls,
         dram,
         *,
@@ -38,7 +38,7 @@ class ControllerUnderTest:
         num_cores: int = 1,
         **kwargs,
     ):
-        controller = ramulator.controller.GenericDDR(
+        controller = ramulator.controller.LPDDR5(
             scheduler=scheduler or ramulator.scheduler.FRFCFS(),
             refresh_manager=refresh_manager or ramulator.refresh_manager.NoRefresh(),
             row_policy=row_policy or ramulator.row_policy.Open(),
@@ -63,7 +63,7 @@ class ControllerUnderTest:
         num_cores: int = 1,
         **kwargs,
     ):
-        controller_cls = controller_cls or ramulator.controller.HBM12
+        controller_cls = controller_cls or ramulator.controller.HBM34
         controller = controller_cls(
             scheduler=scheduler or ramulator.scheduler.FRFCFS(),
             refresh_manager=refresh_manager or ramulator.refresh_manager.NoRefresh(),
@@ -76,16 +76,8 @@ class ControllerUnderTest:
         return cls(controller, num_cores=num_cores)
 
     @classmethod
-    def make_hbm12(cls, dram, **kwargs):
-        return cls.make_hbm(dram, controller_cls=ramulator.controller.HBM12, **kwargs)
-
-    @classmethod
     def make_hbm34(cls, dram, **kwargs):
         return cls.make_hbm(dram, controller_cls=ramulator.controller.HBM34, **kwargs)
-
-    @classmethod
-    def make_gddr7(cls, dram, **kwargs):
-        return cls.make_hbm(dram, controller_cls=ramulator.controller.GDDR7, **kwargs)
 
     def __init__(self, controller, num_cores: int = 1):
         if not hasattr(controller, "dram"):

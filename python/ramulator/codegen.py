@@ -8,7 +8,7 @@ All package __init__.py files (including top-level and dram/) are auto-generated
 
 Usage:
     python -m ramulator codegen                  # generate all
-    python -m ramulator codegen DDR4             # generate specific standard
+    python -m ramulator codegen HBM3             # generate specific standard
     python -m ramulator codegen --dry-run        # print without writing
 """
 

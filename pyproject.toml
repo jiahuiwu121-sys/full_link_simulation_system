@@ -18,8 +18,6 @@ indent-width = 4
 [tool.ruff.format]
 quote-style = "double"
 exclude = [
-    "python/ramulator/dram/ddr*.py",
-    "python/ramulator/dram/gddr*.py",
     "python/ramulator/dram/hbm*.py",
     "python/ramulator/dram/lpddr*.py",
 ]
@@ -28,7 +26,5 @@ exclude = [
 select = ["E", "F", "W", "I"]
 
 [tool.ruff.lint.per-file-ignores]
-"python/ramulator/dram/ddr*.py" = ["E501", "E701"]
-"python/ramulator/dram/gddr*.py" = ["E501", "E701"]
 "python/ramulator/dram/hbm*.py" = ["E501", "E701"]
 "python/ramulator/dram/lpddr*.py" = ["E501", "E701"]

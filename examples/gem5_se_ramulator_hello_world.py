@@ -1,12 +1,13 @@
 """
 Simple gem5 SE-mode test using Ramulator2 as the memory system.
-Tested with gem5 v25.1
+Tested with gem5 v25.1.
 """
 
+from pathlib import Path
 import sys
 
-# Replace with the actual path
-sys.path.insert(0, "/path/to/ramulator2/python")
+RAMULATOR2_HOME = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(RAMULATOR2_HOME / "python"))
 
 import ramulator
 from gem5.components.boards.simple_board import SimpleBoard
@@ -17,11 +18,13 @@ from gem5.isas import ISA
 from gem5.resources.resource import BinaryResource
 from gem5.simulate.simulator import Simulator
 
-# ── Ramulator2 memory configuration ──
-
-ddr4 = ramulator.dram.DDR4(org_preset="DDR4_8Gb_x8", timing_preset="DDR4_2400R", rank=1)
-ctrl = ramulator.controller.GenericDDR(
-    dram=ddr4,
+# Ramulator2 memory configuration
+hbm4 = ramulator.dram.HBM4(
+    org_preset="HBM4_32Gb_8Hi",
+    timing_preset="HBM4_8000Mbps",
+)
+ctrl = ramulator.controller.HBM34(
+    dram=hbm4,
     scheduler=ramulator.scheduler.FRFCFS(),
     refresh_manager=ramulator.refresh_manager.AllBank(),
     row_policy=ramulator.row_policy.Open(),
@@ -35,8 +38,7 @@ mem_sys = ramulator.memory_system.GenericDRAM(
 
 memory = ramulator.gem5.Memory(mem_sys, size="4GiB")
 
-# ── gem5 system setup ──
-
+# gem5 system setup
 processor = SimpleProcessor(cpu_type=CPUTypes.TIMING, isa=ISA.X86, num_cores=1)
 cache_hierarchy = NoCache()
 
@@ -46,11 +48,13 @@ board = SimpleBoard(
     memory=memory,
     cache_hierarchy=cache_hierarchy,
 )
+# Match the HBM4 transaction size (32-bit channel * prefetch 8 / 8).
+board.cache_line_size = 32
 
-board.set_se_binary_workload(binary=BinaryResource(local_path="/tmp/hello"))
+hello_binary = RAMULATOR2_HOME / "examples" / "bin" / "hello"
+board.set_se_binary_workload(binary=BinaryResource(local_path=str(hello_binary)))
 
-# ── Run ──
-
+# Run
 simulator = Simulator(board=board)
 simulator.run()
 

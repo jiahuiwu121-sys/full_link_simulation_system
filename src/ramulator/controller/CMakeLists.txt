@@ -50,18 +50,13 @@ target_sources(
   plugin/impl/bin_trace_recorder.cpp
   plugin/impl/live_trace_streamer.cpp
 
-  impl/generic_ddr_controller.cpp
   impl/lpddr_controller_base.h
   impl/lpddr_controller_base.cpp
   impl/lpddr5_controller.cpp
   impl/lpddr6_controller.cpp
   impl/hbm_controller_base.h
   impl/hbm_controller_base.cpp
-  impl/hbm12_controller.cpp
   impl/hbm34_controller.cpp
-  impl/gddr7_controller.cpp
-  impl/prac_controller.cpp
-  impl/blockhammer_controller.cpp
 )
 
 target_link_libraries(

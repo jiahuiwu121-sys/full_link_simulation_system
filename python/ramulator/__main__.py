@@ -7,7 +7,7 @@ Usage:
     python -m ramulator export <config_script.py> -f json # export as JSON
     python -m ramulator export <config_script.py> -o out.yaml
     python -m ramulator codegen                          # generate C++ from Python DSL
-    python -m ramulator codegen DDR4                     # generate specific standard
+    python -m ramulator codegen HBM3                     # generate specific standard
     python -m ramulator codegen --dry-run                # print without writing
     python -m ramulator visualize                        # start the trace visualizer
     python -m ramulator visualize --port 4000            # custom port

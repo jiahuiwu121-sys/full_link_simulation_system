@@ -16,9 +16,9 @@ Usage in a gem5 config script::
     from gem5.isas import ISA
     from gem5.simulate.simulator import Simulator
 
-    ddr4 = ramulator.dram.DDR4(org_preset="DDR4_8Gb_x8", timing_preset="DDR4_2400R", rank=1)
-    ctrl = ramulator.controller.GenericDDR(
-        dram=ddr4,
+    hbm4 = ramulator.dram.HBM4(org_preset="HBM4_32Gb_8Hi", timing_preset="HBM4_8000Mbps")
+    ctrl = ramulator.controller.HBM34(
+        dram=hbm4,
         scheduler=ramulator.scheduler.FRFCFS(),
         refresh_manager=ramulator.refresh_manager.AllBank(),
         row_policy=ramulator.row_policy.Open(),
@@ -37,6 +37,7 @@ Usage in a gem5 config script::
         memory=memory,
         cache_hierarchy=NoCache(),
     )
+    board.cache_line_size = 32  # default HBM4 transaction size
     ...
 """
 

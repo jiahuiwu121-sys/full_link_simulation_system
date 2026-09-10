@@ -4,8 +4,7 @@ from SCons.Script import Exit
 
 Import('*')
 
-# Replace with the path to your Ramulator2 directory.
-RAMULATOR2_HOME = '/path/to/ramulator2'
+RAMULATOR2_HOME = '/workspaces/ramulator2'
 
 ramulator2_base_header = os.path.join(
     RAMULATOR2_HOME, 'src', 'ramulator', 'base', 'base.h')

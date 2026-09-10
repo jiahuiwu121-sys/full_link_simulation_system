@@ -1,6 +1,6 @@
 """Core DSL for defining DRAM standards.
 
-Each DRAM standard (DDR4, DDR5, HBM3, ...) is defined as a subclass of
+Each DRAM standard (HBM3, HBM4, LPDDR5, LPDDR6) is defined as a subclass of
 DRAMStandard using plain Python data structures:
 
     levels           — dict[str, str]: level name → init state (e.g. {"Bank": "Closed"})
@@ -11,11 +11,13 @@ DRAMStandard using plain Python data structures:
     org_presets      — dict[str, dict]: org preset name → {density, dq, level counts}
 
 Example:
-    class DDR4(DRAMStandard):
-        name = "DDR4"
-        levels = {"Channel": "N_A", "Rank": "N_A", "BankGroup": "N_A",
+    class HBM3(DRAMStandard):
+        name = "HBM3"
+        levels = {"Channel": "N_A", "PseudoChannel": "N_A", "Sid": "N_A",
+                  "BankGroup": "N_A",
                   "Bank": "Closed", "Row": "Closed", "Column": "N_A"}
-        commands = ["ACT", "PREpb", "PREab", "RD", "WR", "RDA", "WRA", "REFab"]
+        commands = ["ACT", "PREpb", "PREab", "RD", "WR", "RDA", "WRA",
+                    "REFab", "REFpb", "RFMab", "RFMpb"]
         states = ["Opened", "Closed", "N_A"]
         ...
 """
@@ -67,7 +69,7 @@ class DRAMStandard(Component):
     """
 
     # ---- Class-level: structural (read by codegen) ----
-    name = None  # type: str  — C++ class name, e.g. "DDR4"
+    name = None  # type: str  — C++ class name, e.g. "HBM3"
     levels = {}  # type: dict[str, str]  — level name → init state
     commands = []  # type: list[str]  — command names
     states = []  # type: list[str]  — state names

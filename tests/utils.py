@@ -33,7 +33,7 @@ def extract_dram_layout(dram):
     # (last entry in bank_positions = fastest cycling in decompose_bank).
 
     # BankGroup → cycle fast to get nCCDS (different-BG) instead of nCCDL (same-BG).
-    # For HBM1: nCCDS=1 vs nCCDL=2 → 2x penalty without this reorder.
+    # Consecutive accesses within one bank group may incur the longer nCCDL interval.
     if "BankGroup" in level_names:
         bg_idx_in_banks = level_names.index("BankGroup") - 1  # offset by Channel
         if bg_idx_in_banks < len(bank_positions) - 1:

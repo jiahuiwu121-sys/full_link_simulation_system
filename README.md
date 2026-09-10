@@ -21,11 +21,21 @@ Ramulator 2.1 can either be used as a standalone simulator that takes memory tra
 
 This Github repository contains the public version of Ramulator 2.1. From time to time, we will synchronize improvements of the code framework, additional functionalities, bug fixes, etc. from our internal version. Ramulator 2.1 welcomes your contribution as well as new ideas and implementations in the memory system.
 
-Currently, Ramulator 2.1 provides the DRAM device and memory controller models for the following standards:
-- DDR3, DDR4, DDR5
-- GDDR6, GDDR7
-- LPDDR5, LPDDR6
-- HBM1, HBM2, HBM3, HBM4
+This distribution provides DRAM device and controller models for **HBM3, HBM4, LPDDR5, and LPDDR6**.
+
+| DRAM | Controller | Default transaction size |
+| --- | --- | --- |
+| HBM3 | `HBM34` | 32 bytes |
+| HBM4 | `HBM34` | 32 bytes |
+| LPDDR5 | `LPDDR5` | 32 bytes |
+| LPDDR6 | `LPDDR6` | 32 payload bytes |
+
+The original frontends, multi-channel memory system, schedulers, address mappers,
+row policies, refresh managers, plugin interfaces, Python CLI/config export,
+pure C++ library integration, gem5 wrappers, and visualizer remain available.
+Other built-in DRAM standards and their dedicated controllers have been removed.
+Existing configurations must select one of the supported pairs above. The Python
+configuration/code-generation workflow remains part of this distribution.
 
 What has changed from Ramulator 2.0:
 - Aggregated bug fixes
@@ -160,7 +170,7 @@ PYTHONPATH=python python3 examples/example_config.py
 `examples/example_config.py` looks like the following:
 
 ```python
-"""Example Ramulator2 configuration and simulation script"""
+"""Example Ramulator2 configuration and simulation script using HBM4."""
 
 import ramulator
 
@@ -169,22 +179,28 @@ frontend = ramulator.frontend.SimpleO3(
     clock_ratio=8,
     traces=["./examples/traces/example_inst.trace"],
     num_expected_insts=500000,
+    llc_linesize=32,
     translation=ramulator.translation.NoTranslation(max_addr=2147483648),
 )
 
-# Create DRAM configuration
-ddr4 = ramulator.dram.DDR4(org_preset="DDR4_8Gb_x8", timing_preset="DDR4_2400R", rank=1)
-# Instantiate the memory controller with the DRAM configuration
-ctrl = ramulator.controller.GenericDDR(
-    dram=ddr4,
-    scheduler=ramulator.scheduler.FRFCFS(),
-    refresh_manager=ramulator.refresh_manager.AllBank(),
+# Create HBM4 DRAM configuration
+hbm4 = ramulator.dram.HBM4(
+    org_preset="HBM4_32Gb_8Hi",
+    timing_preset="HBM4_8000Mbps",
+)
+
+# Instantiate the HBM3/HBM4 memory controller with the HBM4 DRAM configuration
+ctrl = ramulator.controller.HBM34(
+    dram=hbm4,
+    scheduler=ramulator.scheduler.FRFCFSRowHit(),
+    refresh_manager=ramulator.refresh_manager.HBM34PerBankRefresh(),
     row_policy=ramulator.row_policy.Open(),
     addr_mapper=ramulator.addr_mapper.RoBaRaCoCh(),
 )
+
 # Create a memory system with the controller
 mem = ramulator.memory_system.GenericDRAM(
-    clock_ratio=3,
+    clock_ratio=1,
     controllers=[ctrl],
     channel_mapper=ramulator.channel_mapper.CacheLineInterleave(),
 )
@@ -196,10 +212,10 @@ sim.run()
 # sim.stats returns a nested Python dict of all simulation statistics
 stats = sim.stats
 
-# Guard here for `ramulator export`, which captures the configuration without
-# running the simulation.
+# Guard here for `ramulator export`, which does not run the simulation
+# but only exports the config for pure C++ Ramulator library
 if stats:
-    # Controller stats are under memory_system → controller
+    # Controller stats are under memory_system -> controller
     ctrl_stats = stats["memory_system"]["controller"]
 
     print(f"Controller cycles:     {ctrl_stats['cycles']}")
@@ -229,6 +245,7 @@ frontend = ramulator.frontend.SimpleO3(
     clock_ratio=8,
     traces=["./examples/traces/example_inst.trace"],
     num_expected_insts=500000,
+    llc_linesize=32,
     translation=ramulator.translation.NoTranslation(max_addr=2147483648),
 )
 ```
@@ -238,46 +255,48 @@ The frontend generates memory requests and sends them to the memory system. In t
 #### DRAM device
 
 ```python
-ddr4 = ramulator.dram.DDR4(
-    org_preset="DDR4_8Gb_x8",
-    timing_preset="DDR4_2400R",
-    rank=2,
+hbm4 = ramulator.dram.HBM4(
+    org_preset="HBM4_32Gb_8Hi",
+    timing_preset="HBM4_8000Mbps",
 )
 ```
 
-This includes:
+The organization preset specifies die density, DQ width and hierarchy sizes.
+The timing preset supplies primary timing values; derived values and constraints
+are resolved by Python. Optional overrides can change existing organization and
+timing fields. HBM3/4 use two internal ticks per CK; statistics and device tests
+use these internal ticks.
 
-- An organization preset, such as die density, DQ width, number of banks, etc.
-- A timing constraints preset, such as tRCD, tRAS, tRP, etc.
-- Optional overrides to both presets. In this example, we set `rank=2`. You can append as many overrides as you want.
-
-If you want to understand what this object turns into at runtime, section 9.3 walks through the full DRAM device model and the hierarchical state machine behind it.
+The default HBM4 transaction is 32 bytes, so the example sets `llc_linesize=32`.
+Section 9.3 explains the runtime device model.
 
 #### Controller
 
 ```python
-ctrl = ramulator.controller.GenericDDR(
-    dram=ddr4,
-    scheduler=ramulator.scheduler.FRFCFS(),
-    refresh_manager=ramulator.refresh_manager.AllBank(),
+ctrl = ramulator.controller.HBM34(
+    dram=hbm4,
+    scheduler=ramulator.scheduler.FRFCFSRowHit(),
+    refresh_manager=ramulator.refresh_manager.HBM34PerBankRefresh(),
     row_policy=ramulator.row_policy.Open(),
     addr_mapper=ramulator.addr_mapper.RoBaRaCoCh(),
 )
 ```
 
-This configures a GenericDDR memory controller for our just configured `ddr4` DRAM. It has an `FRFCFS` (First-Ready First-Come-First-Served) scheduler, an all-bank refresh, an `Open` row policy, and a `RoBaRaCoCh` address mapper.
+`HBM34` handles the HBM3/4 row and column command buses and clock-edge rules.
+This configuration uses a row-hit-aware FRFCFS scheduler, HBM per-bank refresh,
+an open-row policy and the `RoBaRaCoCh` address mapper.
 
 #### Memory system
 
 ```python
 mem = ramulator.memory_system.GenericDRAM(
-    clock_ratio=3,
+    clock_ratio=1,
     controllers=[ctrl],
     channel_mapper=ramulator.channel_mapper.CacheLineInterleave(),
 )
 ```
 
-`GenericDRAM` is a thin top-level wrapper around one or more controllers. It contains a `clock_ratio` that sets the memory-side tick rate, a list of controllers (`controllers=[...]`), and a channel mapper (`channel_mapper=...`) that decides which memory requests goes to which controller. `clock_ratio=3` means that for every `y` frontend ticks (i.e., front side `clock_ratio=y`), the memory system will be ticked `3` times. Currently, `GenericDRAM` requires all its memory controllers to have the same frequency.
+`GenericDRAM` is a thin top-level wrapper around one or more controllers. It contains a `clock_ratio` that sets the memory-side tick rate, a list of controllers (`controllers=[...]`), and a channel mapper (`channel_mapper=...`) that decides which memory requests goes to which controller. With frontend `clock_ratio=8` and memory-system `clock_ratio=1`, the frontend ticks eight times per memory-system tick. Currently, `GenericDRAM` requires all its memory controllers to have the same frequency.
 
 ### 3.4 What You Should Expect to See
 
@@ -336,49 +355,56 @@ The Ramulator Python package exposes the major components as a set of namespaces
 
 #### Switch to another DRAM standard
 
-You can swap DDR4 for another standard by replacing the DRAM object and, when needed, the controller class.
+Select both the DRAM and its matching controller:
 
-Examples:
+| DRAM | Example organization | Example timing | Controller |
+| --- | --- | --- | --- |
+| HBM3 | `HBM3_8Gb_8hi` | `HBM3_6400Mbps` | `HBM34` |
+| HBM4 | `HBM4_32Gb_8Hi` | `HBM4_8000Mbps` | `HBM34` |
+| LPDDR5 | `LPDDR5_8Gb_x16` | `LPDDR5_6400` | `LPDDR5` |
+| LPDDR6 | `LPDDR6_16Gb_x12` | `LPDDR6_10667_BL24` | `LPDDR6` |
 
-```python
-dram = ramulator.dram.DDR5(org_preset="DDR5_8Gb_x8", timing_preset="DDR5_4800AN")
-ctrl = ramulator.controller.GenericDDR(dram=dram, ...)
-```
-
-```python
-dram = ramulator.dram.LPDDR5(org_preset="LPDDR5_8Gb_x16", timing_preset="LPDDR5_5500")
-ctrl = ramulator.controller.LPDDR5(dram=dram,...)
-```
+For example:
 
 ```python
-dram = ramulator.dram.HBM2(org_preset="HBM2_2Gb", timing_preset="HBM2_2000Mbps")
-ctrl = ramulator.controller.HBM12(dram=dram,...)
+dram = ramulator.dram.LPDDR6(
+    org_preset="LPDDR6_16Gb_x12", timing_preset="LPDDR6_10667_BL24",
+)
+ctrl = ramulator.controller.LPDDR6(
+    dram=dram,
+    scheduler=ramulator.scheduler.FRFCFSRowHit(),
+    refresh_manager=ramulator.refresh_manager.AllBank(),
+    row_policy=ramulator.row_policy.Open(),
+    addr_mapper=ramulator.addr_mapper.RoBaRaCoCh(),
+)
 ```
 
-Use the controller that matches the standard you want to model. DDR3, DDR4, DDR5, and GDDR6 use `GenericDDR`. LPDDR5 uses `LPDDR5`. HBM1 and HBM2 use `HBM12`; HBM3 and HBM4 use `HBM34`.
+`AllBank` and `NoRefresh` can be used with all four standards. Use
+`HBM34PerBankRefresh` for HBM3/4 or `PerBank` for LPDDR5 when per-bank refresh is
+needed. The bundled LPDDR6 model provides `REFab`, not `REFpb`.
 
 #### Change rank count or other DRAM overrides
 
 The DRAM object accepts preset names plus overrides:
 
 ```python
-dram = ramulator.dram.DDR4(
-    org_preset="DDR4_8Gb_x8",
-    timing_preset="DDR4_2400R",
-    rank=2, # This overrides the 1 rank settings in org_preset to be 2 ranks
-    # Add more organization and timing overrides here 
+dram = ramulator.dram.LPDDR5(
+    org_preset="LPDDR5_8Gb_x16",
+    timing_preset="LPDDR5_6400",
+    rank=2,
 )
 ```
 
-Overrides are validated against the DRAM specification. Overriding non-existent parameters raise an error.
+Overrides are validated against the DRAM specification. Unknown fields raise an
+error. HBM3/4 use `PseudoChannel` and `Sid` levels instead of `Rank`.
 
 #### Add more channels
 
 One controller corresponds to one channel.
 
 ```python
-ctrl = ramulator.controller.GenericDDR(
-    dram=ramulator.dram.DDR4(org_preset="DDR4_8Gb_x8", timing_preset="DDR4_2400R", rank=2),
+ctrl = ramulator.controller.HBM34(
+    dram=ramulator.dram.HBM3(org_preset="HBM3_8Gb_8hi", timing_preset="HBM3_6400Mbps"),
     scheduler=ramulator.scheduler.FRFCFS(),
     refresh_manager=ramulator.refresh_manager.AllBank(),
     row_policy=ramulator.row_policy.Open(),
@@ -469,7 +495,7 @@ tests/latency_throughput/plots/fast/
 If you only want one standard:
 
 ```bash
-PYTHONPATH=python pytest tests/latency_throughput/test_fast.py -v -s -k DDR4
+PYTHONPATH=python pytest tests/latency_throughput/test_fast.py -v -s -k HBM3
 ```
 
 ### 5.4 Full Latency-Throughput
@@ -499,7 +525,7 @@ PYTHONPATH=python pytest tests/device_timings -q
 It focuses on cases that are too small and specific for a throughput sweep:
 
 - DRAM prerequisites such as `RD` requiring `ACT`
-- timing gates such as `nRCD`, `nRTP`, and `nRP`
+- timing gates such as `nRCDRD`, `nRTP`, and `nRP`
 
 Use it when you change command semantics or device timing enforcement.
 
@@ -546,12 +572,13 @@ assert closed.ready is False
 
 Here, timing is not the problem. The missing prerequisite is.
 
-After you issue `ACT`, the prerequisite changes to `RD`, but the access is still blocked until `nRCD` expires:
+After you issue `ACT`, the prerequisite changes to `RD`, but the access is still blocked until the ACT-to-RD interval expires. For HBM3/4, ACT occupies three half-CK ticks and RD two, so the first-tick interval is `nRCDRD + 1`:
 
 ```python
 dut.issue("ACT", a, clk=0)
 
-early = dut.probe("RD", a, clk=dut.timings["nRCD"] - 1)
+rd_clk = dut.timings["nRCDRD"] + 1
+early = dut.probe("RD", a, clk=rd_clk - 1)
 assert early.preq == "RD"
 assert early.timing_OK is False
 assert early.ready is False
@@ -559,10 +586,10 @@ assert early.ready is False
 
 Now the state is correct, but timing is not.
 
-At exactly `nRCD`, the same probe becomes fully ready:
+At exactly `rd_clk`, the same probe becomes fully ready:
 
 ```python
-ontime = dut.probe("RD", a, clk=dut.timings["nRCD"])
+ontime = dut.probe("RD", a, clk=dut.timings["nRCDRD"] + 1)
 assert ontime.preq == "RD"
 assert ontime.timing_OK is True
 assert ontime.ready is True
@@ -571,7 +598,7 @@ assert ontime.ready is True
 That is the point where `issue()` becomes valid:
 
 ```python
-dut.issue("RD", a, clk=dut.timings["nRCD"])
+dut.issue("RD", a, clk=dut.timings["nRCDRD"] + 1)
 ```
 
 `issue()` is intentionally strict. It does not try to fix the sequence for you. If you call it on a command whose prerequisite is different, or on a command that is still timing-blocked, it raises an error. A good testing pattern is:
@@ -586,13 +613,13 @@ A minimal `DeviceUnderTest` example looks like this:
 import ramulator
 import tests.device_timings.harness as device_timings
 
-dram = ramulator.dram.DDR4(org_preset="DDR4_8Gb_x8", timing_preset="DDR4_2400R", rank=1)
+dram = ramulator.dram.HBM3(org_preset="HBM3_8Gb_8hi", timing_preset="HBM3_6400Mbps")
 dut = device_timings.DeviceUnderTest(dram)
-a = dut.addr_vec(Rank=0, BankGroup=0, Bank=0, Row=12, Column=0)
+a = dut.addr_vec(PseudoChannel=0, Sid=0, BankGroup=0, Bank=0, Row=12, Column=0)
 
 assert dut.probe("RD", a, clk=0).preq == "ACT"
 dut.issue("ACT", a, clk=0)
-assert dut.probe("RD", a, clk=dut.timings["nRCD"]).ready is True
+assert dut.probe("RD", a, clk=dut.timings["nRCDRD"] + 1).ready is True
 ```
 
 The canonical full device example lives in:
@@ -621,15 +648,15 @@ A minimal `ControllerUnderTest` example looks like this:
 import ramulator
 import tests.controller_scheduling.harness as cs
 
-dram = ramulator.dram.DDR4(org_preset="DDR4_8Gb_x8", timing_preset="DDR4_2400R", rank=1)
-dut = cs.ControllerUnderTest.make_generic_ddr(dram)
+dram = ramulator.dram.HBM3(org_preset="HBM3_8Gb_8hi", timing_preset="HBM3_6400Mbps")
+dut = cs.ControllerUnderTest.make_hbm34(dram)
 
-row0 = dut.addr_vec(Rank=0, BankGroup=0, Bank=0, Row=0, Column=0)
-row1 = dut.addr_vec(Rank=0, BankGroup=0, Bank=0, Row=1, Column=0)
+row0 = dut.addr_vec(PseudoChannel=0, Sid=0, BankGroup=0, Bank=0, Row=0, Column=0)
+row1 = dut.addr_vec(PseudoChannel=0, Sid=0, BankGroup=0, Bank=0, Row=1, Column=0)
 
 dut.send_request("Read", row0)
 dut.send_request("Read", row1)
-history = dut.run_until_idle(max_ticks=128)
+history = dut.run_until_idle(max_ticks=512)
 dut.assert_commands(["ACT", "RD", "PREpb", "ACT", "RD"], history=history)
 ```
 
@@ -714,9 +741,9 @@ from gem5.simulate.simulator import Simulator
 
 # ── Ramulator2 memory configuration ──
 
-ddr4 = ramulator.dram.DDR4(org_preset="DDR4_8Gb_x8", timing_preset="DDR4_2400R", rank=1)
-ctrl = ramulator.controller.GenericDDR(
-    dram=ddr4,
+hbm3 = ramulator.dram.HBM3(org_preset="HBM3_8Gb_8hi", timing_preset="HBM3_6400Mbps")
+ctrl = ramulator.controller.HBM34(
+    dram=hbm3,
     scheduler=ramulator.scheduler.FRFCFS(),
     refresh_manager=ramulator.refresh_manager.AllBank(),
     row_policy=ramulator.row_policy.Open(),
@@ -740,6 +767,8 @@ board = SimpleBoard(
     cache_hierarchy=NoCache(),
 )
 
+# Match the default HBM3 transaction size.
+board.cache_line_size = 32
 board.set_se_binary_workload(binary=BinaryResource(local_path="/path/to/binary"))
 
 simulator = Simulator(board=board)
@@ -769,11 +798,11 @@ Ramulator's internal stats (row hits, queue lengths, read latency, etc.) are wri
 curves for multi-channel Ramulator2 memory systems driven by gem5's
 PyTrafficGen. 
 
-Run a full 16 DDR5 channel latency-throughput sweep:
+Run a full 16 HBM4 channel latency-throughput sweep:
 
 ```bash
 GEM5_BIN=<gem5>/build/X86/gem5.opt \
-python3 tests/latency_throughput/gem5_pytrafficgen/run.py --dram DDR5 --channels 16
+python3 tests/latency_throughput/gem5_pytrafficgen/run.py --dram HBM4 --channels 16
 ```
 
 Or with specific config points:
@@ -781,7 +810,7 @@ Or with specific config points:
 ```bash
 GEM5_BIN=<gem5>/build/X86/gem5.opt \
 python3 tests/latency_throughput/gem5_pytrafficgen/run.py \
-  --dram DDR5 --channels 16 \
+  --dram HBM4 --channels 16 \
   --traffic stream --read-ratios 100 --intensities 0.5 0.9 1.0
 ```
 
@@ -793,7 +822,7 @@ Plot the results with, e.g.,:
 
 ```bash
 python3 tests/latency_throughput/gem5_pytrafficgen/plot.py \
-  --csv /tmp/gem5-pytrafficgen/DDR5_MOP4CLXOR_ch16/results.csv
+  --csv /tmp/gem5-pytrafficgen/HBM4_MOP4CLXOR_ch16/results.csv
 ```
 
 
@@ -820,8 +849,8 @@ import ramulator
 
 frontend = ramulator.frontend.External(clock_ratio=1)
 
-dram = ramulator.dram.DDR4(org_preset="DDR4_8Gb_x8", timing_preset="DDR4_2400R", rank=1)
-ctrl = ramulator.controller.GenericDDR(
+dram = ramulator.dram.HBM3(org_preset="HBM3_8Gb_8hi", timing_preset="HBM3_6400Mbps")
+ctrl = ramulator.controller.HBM34(
     dram=dram,
     scheduler=ramulator.scheduler.FRFCFS(),
     refresh_manager=ramulator.refresh_manager.AllBank(),
@@ -876,7 +905,7 @@ bool accepted = frontend->receive_external_requests(
     [](Ramulator::Request& req) {
       // Request completed — req.depart has the completion cycle
     },
-    64                                // size_bytes
+    32                                // size_bytes (default HBM3 transaction)
 );
 
 // If accepted is false, the memory system's queue is full.
@@ -957,7 +986,7 @@ class FooBarScheduler : public IScheduler, public Implementation {
 Then add that file to the relevant `CMakeLists.txt`, rebuild, and use it from Python:
 
 ```python
-ctrl = ramulator.controller.GenericDDR(
+ctrl = ramulator.controller.HBM34(
     dram=dram,
     scheduler=ramulator.scheduler.FooBar(weight=8), # New scheduler!
     refresh_manager=ramulator.refresh_manager.AllBank(),
@@ -980,7 +1009,11 @@ Today, the plugin lifecycle is:
 - `post_schedule()`
   Runs at the end of the controller tick
 
-Built-in plugins include:
+The shared plugin infrastructure is retained. Research plugins still require the
+commands and hierarchy they were designed for; for example, VRR-based plugins
+need a custom VRR-capable specification and are not usable with the four bundled
+standards as-is. The existing RFMManager also assumes a Rank hierarchy and needs
+adaptation before use with HBM3/4. General-purpose plugins include:
 
 - `CommandCounter`
   Counts selected DRAM commands and writes `command, count` lines to a CSV file
@@ -996,7 +1029,7 @@ Built-in plugins include:
 Example:
 
 ```python
-ctrl = ramulator.controller.GenericDDR(
+ctrl = ramulator.controller.HBM34(
     dram=dram,
     scheduler=ramulator.scheduler.FRFCFS(),
     refresh_manager=ramulator.refresh_manager.AllBank(),
@@ -1024,19 +1057,19 @@ For example, if you want to create a variant of an existing DRAM standard by add
 ```python
 import math
 
-from ramulator.dram.ddr3 import DDR3
+from ramulator.dram.hbm3 import HBM3
 from ramulator.dram.spec import TimingConstraint
 
 
-class DDR3Foo(DDR3):
-    name = "DDR3Foo"
+class HBM3Foo(HBM3):
+    name = "HBM3Foo"
 
     # Add the new command
-    commands = DDR3.commands + ["FOO"]
+    commands = HBM3.commands + ["FOO"]
 
     # Add new timing constraints from the new command
-    timing_params = DDR3.timing_params + ["nFOO"]
-    timing_constraints = DDR3.timing_constraints + [
+    timing_params = HBM3.timing_params + ["nFOO"]
+    timing_constraints = HBM3.timing_constraints + [
         TimingConstraint(level="Bank", preceding=["FOO"], following=["ACT"], latency="nFOO"),
         TimingConstraint(level="Bank", preceding=["ACT"], following=["FOO"], latency="nRC"),
     ]
@@ -1074,13 +1107,13 @@ config = {
     "dram_class": "MyStandard",
     "org_preset": "MyOrgPreset",
     "timing_preset": "MyTimingPreset",
-    "controller_class": "GenericDDR",
+    "controller_class": "HBM34",
     "stream_cls": 8,
     "nop_counters": (1, 10, 100, 1000),
 }
 ```
 
-The exact controller class depends on the standard. For example, DDR3/DDR4/DDR5/GDDR6 use `GenericDDR`, LPDDR5 uses `LPDDR5`, HBM1/HBM2 use `HBM12`, and HBM3/HBM4 use `HBM34`.
+HBM3/HBM4 use `HBM34`, LPDDR5 uses `LPDDR5`, and LPDDR6 uses `LPDDR6`. Select the controller that matches the command protocol of your extension.
 
 Then run:
 
@@ -1190,16 +1223,16 @@ When the controller initializes its device, `DRAMDevice::init()` does three thin
 2. Builds the root `DRAMNode`
 3. Collects a flat list of all bank nodes
 
-The node tree represents the structural hierarchy of one channel. For DDR4, that hierarchy is effectively:
+The node tree represents the structural hierarchy of one channel. For LPDDR5/6, that hierarchy is effectively:
 
 ```text
 Channel -> Rank -> BankGroup -> Bank
 ```
 
-For HBM3 it is:
+For HBM3/4 it is:
 
 ```text
-Channel -> PseudoChannel -> BankGroup -> Bank
+Channel -> PseudoChannel -> Sid -> BankGroup -> Bank
 ```
 
 The tree stops before the `Row` level. Ramulator does not instantiate one node per physical row. Instead, it tracks row state lazily inside the bank-like node that owns those rows.
@@ -1338,20 +1371,20 @@ That logic lives directly in the command handlers. `ACT::preq()` is a good examp
 - `All`
   Every bank in the addressed scope, used by commands such as `PREab` and `REFab`
 - `SameBank`
-  The same bank ID across a wider scope, used by standards that need that pattern, such as DDR5
+  The same bank ID across a wider scope, used by standards that need that pattern, with same-bank refresh targeting
 
 `DRAMDevice::get_target_banks()` turns the address vector and `BankTarget` into concrete bank-node indices. That is why a refresh handler can still be written as bank-local logic while affecting many banks.
 
 #### 9.3.6 A Concrete Request Walkthrough
 
-It helps to walk through one ordinary read request on a closed DDR4 bank.
+It helps to walk through one ordinary read request on a closed HBM3 bank.
 
 1. A frontend sends a read request into the controller.
 2. The controller maps the physical address into `addr_vec`.
 3. The controller sets `final_command` from the DRAM standard's `supported_requests`, so a read request targets `RD`.
 4. The scheduler or controller calls `get_preq_command(final_command, addr_vec)`.
 5. The device dispatches that question to the relevant bank node. Because the bank is closed, the answer is `ACT`.
-6. The controller calls `check_timing(ACT, addr_vec)`. The hierarchy checks channel, rank, bank group, and bank timing state.
+6. The controller calls `check_timing(ACT, addr_vec)`. The hierarchy checks channel, pseudochannel, SID, bank-group and bank timing state.
 7. If timing allows it, `issue_command(ACT, addr_vec, clk)` runs. First it updates timing through the node tree, then it applies the functional action that changes the bank state to open and records the opened row.
 8. Because `ACT` is marked as an opening command, the request moves to the active buffer instead of retiring.
 9. On a later tick, the controller asks again for the prerequisite command. Now the bank is open to the right row, so the answer is `RD`.
@@ -1366,42 +1399,22 @@ A request is not expanded into a fixed command script ahead of time. Each cycle,
 
 ### 9.4 Controller Tick Flow
 
-We explain the `GenericDDR` controller flow as an example:
+`HBM34Controller::tick()` uses the shared `HBMControllerBase` scheduling helpers:
 
-1. `tick_prologue()`
+1. Advance time, serve completed reads, update queue statistics, tick refresh,
+   and run row-policy/plugin `pre_schedule()` hooks.
+2. On a rising edge, try the column-command slot. Active requests have priority,
+   followed by maintenance requests and normal read/write requests.
+3. Try the row-command slot. Clock-edge and command-pairing rules filter the
+   candidates; falling edges allow only eligible precharge commands.
+4. For each selected command, apply the row policy, issue it to the device,
+   update statistics and notify plugins. Retire completed requests or promote
+   opened requests to the active buffer.
+5. Run row-policy/plugin `post_schedule()` hooks.
 
-   Advance the controller clock, accumulate queue-length statistics, and serve completed reads (i.e., calls their callback when they shall be returned to the frontend).
-
-2. `m_refresh->tick()`
-
-   Give the refresh manager a chance to inject maintenance work.
-
-3. `m_rowpolicy->pre_schedule()` and plugin `pre_schedule()`
-
-   Let policies react before candidate selection.
-4. Candidate selection through 3 requests buffers (active, priority, and normal R/W)
-
-   The controller tries to schedule active requests first, then priority requests, then normal read or write traffic. The active requests are the ones that already has their DRAM row open. Prioritizing them reduces premature precharges that wastes cycles.
-
-5. `m_rowpolicy->try_upgrade_command(req)`
-
-   Row policy may change a command in place, for example `RD` to `RDA` (i.e., close row policy), if that upgraded command is valid and ready.
-
-6. Issue the command that the scheduled request needs to progress
-
-   `m_device.issue_command(...)` updates timing state and any command-driven state changes.
-
-7. Update stats and notify observers
-
-   The controller updates row-hit and row-miss statistics, then calls `on_issue(...)` on the row policy and all plugins.
-
-8. Advance the request lifecycle
-
-   If the issued command is the final command, the request is retired. If it is an opening command such as `ACT`, the request is promoted to the active buffer.
-
-9. `post_schedule()` hooks
-
-   Row policy and plugins can do things at the end of the tick.
+LPDDR5/6 use `LPDDRControllerBase` with split ACT1/ACT2 activation, WCK
+synchronization and their standard-specific read/write commands. These controller
+rules are separate from the device timing constraints.
 
 ### 9.5 A Good Reading Order for the Source
 
@@ -1410,10 +1423,10 @@ If you want to understand the codebase without getting lost, this order works we
 1. `examples/example_config.py`
 2. `python/ramulator/__init__.py`
 3. `src/ramulator/python/bindings.cpp`
-4. `src/ramulator/controller/impl/generic_ddr_controller.cpp`
+4. `src/ramulator/controller/impl/hbm34_controller.cpp`
 5. `src/ramulator/controller/controller_base.cpp`
 6. `src/ramulator/dram/device.h` and `src/ramulator/dram/node.cpp`
-7. One DRAM definition in `python/ramulator/dram/`, such as `ddr4.py`
+7. One DRAM definition in `python/ramulator/dram/`, such as `hbm3.py`
 
 That path starts from the public API, then drops into the execution path, then finally into the deeper modeling machinery.
 

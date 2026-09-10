@@ -1,4 +1,4 @@
-"""Example Ramulator2 configuration and simulation script"""
+"""Example Ramulator2 configuration and simulation script using HBM4."""
 
 import ramulator
 
@@ -7,22 +7,28 @@ frontend = ramulator.frontend.SimpleO3(
     clock_ratio=8,
     traces=["./examples/traces/example_inst.trace"],
     num_expected_insts=500000,
+    llc_linesize=32,
     translation=ramulator.translation.NoTranslation(max_addr=2147483648),
 )
 
-# Create DRAM configuration
-ddr4 = ramulator.dram.DDR4(org_preset="DDR4_8Gb_x8", timing_preset="DDR4_2400R", rank=1)
-# Instantiate the memory controller with the DRAM configuation
-ctrl = ramulator.controller.GenericDDR(
-    dram=ddr4,
-    scheduler=ramulator.scheduler.FRFCFS(),
-    refresh_manager=ramulator.refresh_manager.AllBank(),
+# Create HBM4 DRAM configuration
+hbm4 = ramulator.dram.HBM4(
+    org_preset="HBM4_32Gb_8Hi",
+    timing_preset="HBM4_8000Mbps",
+)
+
+# Instantiate the HBM3/HBM4 memory controller with the HBM4 DRAM configuration
+ctrl = ramulator.controller.HBM34(
+    dram=hbm4,
+    scheduler=ramulator.scheduler.FRFCFSRowHit(),
+    refresh_manager=ramulator.refresh_manager.HBM34PerBankRefresh(),
     row_policy=ramulator.row_policy.Open(),
     addr_mapper=ramulator.addr_mapper.RoBaRaCoCh(),
 )
+
 # Create a memory system with the controller
 mem = ramulator.memory_system.GenericDRAM(
-    clock_ratio=3,
+    clock_ratio=1,
     controllers=[ctrl],
     channel_mapper=ramulator.channel_mapper.CacheLineInterleave(),
 )
@@ -34,10 +40,10 @@ sim.run()
 # sim.stats returns a nested Python dict of all simulation statistics
 stats = sim.stats
 
-# Guard here for `ramulator export`, which does not run the simulation 
+# Guard here for `ramulator export`, which does not run the simulation
 # but only exports the config for pure C++ Ramulator library
 if stats:
-    # Controller stats are under memory_system → controller
+    # Controller stats are under memory_system -> controller
     ctrl_stats = stats["memory_system"]["controller"]
 
     print(f"Controller cycles:     {ctrl_stats['cycles']}")
