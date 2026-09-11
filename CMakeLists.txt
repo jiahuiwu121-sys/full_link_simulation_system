@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.22)
 
 project(
   Ramulator
@@ -70,6 +70,20 @@ endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+option(RAMULATOR_ENABLE_DRAMPOWER "Build the in-process DRAMPower backend" ON)
+if(RAMULATOR_ENABLE_DRAMPOWER)
+  set(DRAMPOWER_BUILD_CLI OFF CACHE BOOL "" FORCE)
+  set(DRAMPOWER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(DRAMPOWER_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+  set(DRAMPOWER_INSTALL OFF CACHE BOOL "" FORCE)
+  # DRAMPower is vendored with the simulator. Fetch only its pinned DRAMUtils
+  # dependency when no system package is available.
+  set(DRAMPOWER_USE_FETCH_CONTENT ON CACHE BOOL "" FORCE)
+  set(DRAMPOWER_USE_FETCH_CONTENT_CLI11 OFF CACHE BOOL "" FORCE)
+  set(DRAMPOWER_USE_FETCH_CONTENT_SPDLOG OFF CACHE BOOL "" FORCE)
+  add_subdirectory(DRAMPower EXCLUDE_FROM_ALL)
+endif()
+
 add_library(ramulator SHARED)
 set_target_properties(ramulator PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY  ${PROJECT_SOURCE_DIR}
@@ -81,6 +95,10 @@ target_link_libraries(
   PRIVATE fmt::fmt
   PRIVATE yaml-cpp::yaml-cpp
 )
+if(RAMULATOR_ENABLE_DRAMPOWER)
+  target_link_libraries(ramulator PRIVATE DRAMPower::DRAMPower)
+  target_compile_definitions(ramulator PRIVATE RAMULATOR_ENABLE_DRAMPOWER=1)
+endif()
 
 add_subdirectory(src/ramulator)
 

@@ -4,6 +4,7 @@
 #include <functional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "ramulator/base/config_node.h"
@@ -18,6 +19,15 @@ class Stats {
   };
   std::vector<Entry> m_entries;
 
+  template <typename T>
+  static void print_value(std::ostream& os, const T& value) {
+    if constexpr (std::is_floating_point_v<T>) {
+      os << config_float_string(value);
+    } else {
+      os << value;
+    }
+  }
+
  public:
   // Note: add() captures `ref` by reference. The referenced object must outlive
   // this Stats instance (i.e., stats must be collected before the owner is destroyed).
@@ -25,7 +35,11 @@ class Stats {
   void add(std::string name, const T& ref) {
     m_entries.push_back(
         {name,
-         [n = name, &ref](std::ostream& os, int indent) { os << std::string(indent, ' ') << n << ": " << ref << "\n"; },
+         [n = name, &ref](std::ostream& os, int indent) {
+           os << std::string(indent, ' ') << n << ": ";
+           print_value(os, ref);
+           os << "\n";
+         },
          [&ref]() -> ConfigNode { return ConfigNode(ref); }});
   }
 
@@ -36,7 +50,9 @@ class Stats {
                            std::string pad(indent, ' ');
                            os << pad << n << ":\n";
                            for (const auto& v : ref) {
-                             os << pad << "  - " << v << "\n";
+                             os << pad << "  - ";
+                             print_value(os, v);
+                             os << "\n";
                            }
                          },
                          [&ref]() -> ConfigNode {

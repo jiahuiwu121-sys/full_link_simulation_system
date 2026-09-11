@@ -9,6 +9,7 @@
 #include "ramulator/controller/addr_mapper/i_addr_mapper.h"
 #include "ramulator/controller/i_controller.h"
 #include "ramulator/controller/plugin/i_controller_plugin.h"
+#include "ramulator/controller/plugin/power_reporter.h"
 #include "ramulator/controller/scheduler/i_scheduler.h"
 #include "ramulator/dram/device.h"
 
@@ -36,6 +37,8 @@ class ControllerBase : public IController, public Implementation {
   int get_tx_bytes() const override;
   int get_num_levels() const override;
   float get_tCK() const override;
+  bool get_power_stats(PowerStats& stats) override;
+  void finalize_power() override;
 
   bool send(Request& req) override;
   bool priority_send(Request& req) override;
@@ -60,6 +63,7 @@ class ControllerBase : public IController, public Implementation {
   IRefreshManager* m_refresh = nullptr;
   IRowPolicy* m_rowpolicy = nullptr;
   std::vector<IControllerPlugin*> m_plugins;
+  IPowerReporter* m_power_reporter = nullptr;
 
   // Request buffers
   std::deque<Request> m_pending;
@@ -131,6 +135,11 @@ class ControllerBase : public IController, public Implementation {
   // Common tick preamble: advance clock, accumulate queue stats,
   // drain completed reads.
   void tick_prologue();
+
+  // Commit one command to the DRAM state and notify every observer exactly
+  // once. The explicit command argument supports LPDDR's synthetic CAS/ACT2
+  // issue paths without permanently changing the request's final command.
+  void issue_and_notify(Request& req, int command);
 
   // Final command done — move to pending (reads) or remove (writes/maintenance).
   void retire_request(ReqBuffer::iterator& req_it, ReqBuffer& buffer);

@@ -38,7 +38,9 @@ enum class CmdType {
 	END_OF_SIMULATION,		// 22
 	RFMAB,					// 23
 	RFMPB,					// 24
-	COUNT,					// 25
+	ACT1,					// 25, LPDDR interface-only first activation word
+	ACT2,					// 26, LPDDR interface-only second activation word
+	COUNT,					// 27
 };
 
 namespace CmdTypeUtil
@@ -110,6 +112,10 @@ namespace CmdTypeUtil
 			return CmdType::RFMAB;
 		if (str == "RFMpb" || str == "RFMPB")
 			return CmdType::RFMPB;
+		if (str == "ACT1")
+			return CmdType::ACT1;
+		if (str == "ACT2")
+			return CmdType::ACT2;
 		if (str == "PREpb")
 			return CmdType::PRE;
 		if (str == "PREab")
@@ -177,6 +183,10 @@ namespace CmdTypeUtil
 			return "RFMab";
 		case CmdType::RFMPB:
 			return "RFMpb";
+		case CmdType::ACT1:
+			return "ACT1";
+		case CmdType::ACT2:
+			return "ACT2";
 		}
 		return "NOP";
 	}

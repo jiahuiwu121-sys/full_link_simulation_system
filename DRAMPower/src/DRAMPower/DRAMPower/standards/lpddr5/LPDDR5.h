@@ -45,6 +45,9 @@ public:
     const LPDDR5Interface& getInterface() const {
         return m_interface;
     }
+    const MemSpecLPDDR5& getMemSpec() const {
+        return m_memSpec;
+    }
 // Overrides
     energy_t calcCoreEnergyStats(const SimulationStats& stats) const override;
     interface_energy_info_t calcInterfaceEnergyStats(const SimulationStats& stats) const override;

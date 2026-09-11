@@ -8,6 +8,7 @@ from .aqua import AQUA
 from .bin_trace_recorder import BinTraceRecorder
 from .cmd_trace_recorder import CmdTraceRecorder
 from .command_counter import CommandCounter
+from .dram_power import DRAMPower
 from .graphene import Graphene
 from .hydra import Hydra
 from .hynix_trr import HynixTRR
@@ -21,4 +22,4 @@ from .rrs import RRS
 from .samsung_trr import SamsungTRR
 from .t_wi_ce_ideal import TWiCeIdeal
 
-__all__ = ['AQUA', 'BinTraceRecorder', 'CmdTraceRecorder', 'CommandCounter', 'Graphene', 'Hydra', 'HynixTRR', 'IdealTRR', 'IssuedCommandValidationHook', 'LiveTraceStreamer', 'OracleRH', 'PARA', 'RFMManager', 'RRS', 'SamsungTRR', 'TWiCeIdeal']
+__all__ = ['AQUA', 'BinTraceRecorder', 'CmdTraceRecorder', 'CommandCounter', 'DRAMPower', 'Graphene', 'Hydra', 'HynixTRR', 'IdealTRR', 'IssuedCommandValidationHook', 'LiveTraceStreamer', 'OracleRH', 'PARA', 'RFMManager', 'RRS', 'SamsungTRR', 'TWiCeIdeal']

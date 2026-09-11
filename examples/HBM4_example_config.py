@@ -1,6 +1,10 @@
-"""Example Ramulator2 configuration and simulation script using four HBM4 controllers."""
+"""Four-channel HBM4 simulation with the in-process DRAMPower backend."""
 
+from pathlib import Path
 import ramulator
+
+ROOT = Path(__file__).resolve().parents[1]
+POWER_SPEC = ROOT / "DRAMPower/examples/hbm34/hbm4_8000_estimated.json"
 
 
 def make_hbm4_controller():
@@ -16,6 +20,13 @@ def make_hbm4_controller():
         refresh_manager=ramulator.refresh_manager.HBM34PerBankRefresh(),
         row_policy=ramulator.row_policy.Open(),
         addr_mapper=ramulator.addr_mapper.RoBaRaCoCh(),
+        controller_plugins=[
+            ramulator.controller_plugin.DRAMPower(
+                memspec_path=str(POWER_SPEC),
+                strict_validation=True,
+                include_interface=True,
+            )
+        ],
     )
 
 
@@ -45,6 +56,9 @@ stats = sim.stats
 # Guard here for `ramulator export`, which does not run the simulation
 # but only exports the config for pure C++ Ramulator library
 if stats:
+    sim.finalize()
+    stats = sim.stats
+
     # Controller stats are under memory_system -> controller
     ctrl_stats = stats["memory_system"]["controller"]
     controllers = ctrl_stats if isinstance(ctrl_stats, list) else [ctrl_stats]
@@ -61,6 +75,8 @@ if stats:
     print(f"Total row hits:        {total_row_hits}")
     print(f"Total row misses:      {total_row_misses}")
     print(f"Total row conflicts:   {total_row_conflicts}")
+    print(f"DRAM energy:           {stats['memory_system']['dram_total_energy_j']:.6e} J")
+    print(f"Average DRAM power:    {stats['memory_system']['dram_average_power_w']:.6f} W")
 
     for index, ctrl in enumerate(controllers):
         print(f"Controller {index} cycles:       {ctrl['cycles']}")

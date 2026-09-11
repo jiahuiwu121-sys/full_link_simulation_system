@@ -74,13 +74,8 @@ std::optional<HBMControllerBase::IssuedCommand> HBMControllerBase::try_issue_slo
     update_request_stats(cand.it);
   }
 
-  m_device.issue_command(cand.it->command, cand.it->addr_vec, m_clk);
   IssuedCommand issued{slot, cand.it->command, cand.it->addr_vec, m_clk};
-
-  m_rowpolicy->on_issue(*cand.it);
-  for (auto* p : m_plugins) {
-    p->on_issue(*cand.it);
-  }
+  issue_and_notify(*cand.it, cand.it->command);
 
   if (cand.it->command == cand.it->final_command) {
     retire_request(cand.it, *cand.buffer);

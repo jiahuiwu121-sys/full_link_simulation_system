@@ -1,9 +1,11 @@
+#include <algorithm>
 #include <stdexcept>
 
 #include <fmt/format.h>
 
 #include "ramulator/base/param.h"
 #include "ramulator/controller/i_controller.h"
+#include "ramulator/controller/plugin/power_reporter.h"
 #include "ramulator/memory_system/channel_mapper/i_channel_mapper.h"
 #include "ramulator/memory_system/i_memory_system.h"
 #include "ramulator/translation/i_translation.h"
@@ -22,6 +24,8 @@ class GenericDRAMSystem final : public IMemorySystem, public Implementation {
  public:
   int s_num_read_requests = 0;
   int s_num_write_requests = 0;
+  int s_powered_channels = 0;
+  PowerStats s_dram_power;
 
  public:
   void init() override {
@@ -45,6 +49,12 @@ class GenericDRAMSystem final : public IMemorySystem, public Implementation {
 
     m_stats.add("total_num_read_requests", s_num_read_requests);
     m_stats.add("total_num_write_requests", s_num_write_requests);
+    m_stats.add("powered_channels", s_powered_channels);
+    m_stats.add("dram_power_duration_seconds", s_dram_power.duration_seconds);
+    m_stats.add("dram_core_energy_j", s_dram_power.core_energy_j);
+    m_stats.add("dram_interface_energy_j", s_dram_power.interface_energy_j);
+    m_stats.add("dram_total_energy_j", s_dram_power.total_energy_j);
+    m_stats.add("dram_average_power_w", s_dram_power.average_power_w);
   };
 
   void setup(IFrontEnd* frontend, IMemorySystem* memory_system) override {
@@ -88,6 +98,30 @@ class GenericDRAMSystem final : public IMemorySystem, public Implementation {
   void reset_stats() override {
     s_num_read_requests = 0;
     s_num_write_requests = 0;
+    s_powered_channels = 0;
+    s_dram_power = {};
+  }
+
+  void update_stats() override {
+    s_powered_channels = 0;
+    s_dram_power = {};
+    for (auto* controller : m_controllers) {
+      PowerStats channel;
+      if (!controller->get_power_stats(channel)) continue;
+      ++s_powered_channels;
+      s_dram_power.duration_seconds = std::max(s_dram_power.duration_seconds, channel.duration_seconds);
+      s_dram_power.core_energy_j += channel.core_energy_j;
+      s_dram_power.interface_energy_j += channel.interface_energy_j;
+      s_dram_power.total_energy_j += channel.total_energy_j;
+    }
+    s_dram_power.average_power_w = s_dram_power.duration_seconds > 0.0
+                                       ? s_dram_power.total_energy_j / s_dram_power.duration_seconds
+                                       : 0.0;
+  }
+
+  void finalize() override {
+    for (auto* controller : m_controllers) controller->finalize_power();
+    update_stats();
   }
 
   int get_clock_ratio() override {

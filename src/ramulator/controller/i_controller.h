@@ -4,6 +4,7 @@
 #include <list>
 
 #include "ramulator/base/base.h"
+#include "ramulator/controller/plugin/power_reporter.h"
 
 namespace Ramulator {
 
@@ -29,6 +30,8 @@ class IController {
   virtual int get_tx_bytes() const = 0;
   virtual int get_num_levels() const = 0;
   virtual float get_tCK() const = 0;
+  virtual bool get_power_stats(PowerStats&) { return false; }
+  virtual void finalize_power() {}
 };
 
 struct ReqBuffer {

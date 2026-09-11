@@ -68,6 +68,9 @@ void LPDDR5Interface::registerPatterns() {
         act_pattern[10] = V;
     }
     m_patternHandler.registerPattern<CmdType::ACT>(act_pattern);
+    const auto act_split = act_pattern.begin() + act_pattern.size() / 2;
+    m_patternHandler.registerPattern<CmdType::ACT1>(commandPattern_t(act_pattern.begin(), act_split));
+    m_patternHandler.registerPattern<CmdType::ACT2>(commandPattern_t(act_split, act_pattern.end()));
     // PRE
     commandPattern_t pre_pattern = {
         // R1
@@ -246,6 +249,8 @@ timestamp_t LPDDR5Interface::getLastCommandTime() const {
 void LPDDR5Interface::doCommand(const Command& cmd) {
     switch(cmd.type) {
         case CmdType::ACT:
+        case CmdType::ACT1:
+        case CmdType::ACT2:
         case CmdType::PRE:
         case CmdType::PREA:
         case CmdType::REFB:

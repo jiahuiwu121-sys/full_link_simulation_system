@@ -10,6 +10,7 @@
 - [8. Extending Ramulator](#8-extending-ramulator)
 - [9. How Ramulator Works Internally](#9-how-ramulator-works-internally)
 - [10. Trace Visualizer](#10-trace-visualizer)
+- [11. DRAMPower Integration](#11-drampower-integration)
 
 ## 1. Overview
 
@@ -103,7 +104,7 @@ You should see some example statistics being printed. You can head to Section 3 
 **Required:**
 
 - A C++20 compiler, such as `g++-12` or `clang++-15`
-- CMake 3.14 or newer
+- CMake 3.22 or newer (required by the embedded DRAMPower build)
 - Python 3.10 or newer if you want the Python bindings, the CLI, or the tests
 
 **Auto-fetched by CMake (no manual install):**
@@ -123,6 +124,10 @@ You should see some example statistics being printed. You can head to Section 3 
 
 **Optional:** `clang-format`.
 
+DRAMPower and its pinned DRAMUtils dependency are built automatically when
+`RAMULATOR_ENABLE_DRAMPOWER=ON` (the default). Use
+`-DRAMULATOR_ENABLE_DRAMPOWER=OFF` for a build without the power backend.
+
 To build Ramulator 2.1 in standalone mode:
 ```bash
 mkdir -p build
@@ -141,6 +146,9 @@ cmake .. -DRAMULATOR_PYTHON_BINDINGS=OFF
 make -j
 cd ..
 ```
+
+This pure C++ build can still include DRAMPower; Python is not used by the
+runtime power calculation.
 
 ### 2.4 Installing the Python Package
 
@@ -1517,3 +1525,66 @@ controller_plugins=[
 ```
 
 The browser connects via WebSocket and displays commands as they arrive.
+
+## 11. DRAMPower Integration
+
+Ramulator can feed every command that is actually issued by a controller into
+an in-process DRAMPower model. Add one `DRAMPower` controller plugin per
+channel; each model instance represents that channel locally as channel zero.
+Ramulator remains the timing and scheduling authority, while DRAMPower performs
+synchronous online accounting from the committed command stream. For example:
+
+```python
+from pathlib import Path
+import ramulator
+
+hbm4 = ramulator.dram.HBM4(
+    org_preset="HBM4_32Gb_8Hi",
+    timing_preset="HBM4_8000Mbps",
+)
+power = ramulator.controller_plugin.DRAMPower(
+    memspec_path=str(Path("DRAMPower/examples/hbm34/hbm4_8000_estimated.json")),
+    strict_validation=True,
+    include_interface=True,
+    read_toggle_rate=0.5,
+    write_toggle_rate=0.5,
+)
+
+controller = ramulator.controller.HBM34(
+    dram=hbm4,
+    scheduler=ramulator.scheduler.FRFCFSRowHit(),
+    refresh_manager=ramulator.refresh_manager.HBM34PerBankRefresh(),
+    row_policy=ramulator.row_policy.Open(),
+    addr_mapper=ramulator.addr_mapper.RoBaRaCoCh(),
+    controller_plugins=[power],
+)
+```
+
+The memory-system statistics contain `dram_core_energy_j`,
+`dram_interface_energy_j`, `dram_total_energy_j`, and
+`dram_average_power_w`. Per-channel component and command-class breakdowns are
+under each controller's `controller_plugin` entry.
+
+Available matching example memspecs are:
+
+- `DRAMPower/examples/hbm34/hbm3_6400_estimated.json`
+- `DRAMPower/examples/hbm34/hbm4_8000_estimated.json`
+- `DRAMPower/examples/hbm34/hbm4_16000_estimated.json`
+- `DRAMPower/examples/lpddr5/lpddr5_16gb_x16_6400_estimated.json`
+- `DRAMPower/examples/lpddr6/lpddr6_16gb_x12_10667_bl24_estimated.json`
+
+Strict validation rejects mismatched memory types, organizations, widths,
+burst lengths, and timestamp units. LPDDR DQ energy uses configured toggle and
+duty rates because Ramulator requests currently do not carry data values. HBM
+data activity uses the `datapattern` rates stored in its memspec.
+LPDDR CAS synchronization commands are reported in
+`ignored_interface_commands`; they do not affect core energy. LPDDR6 BL48
+commands are rejected until a burst-length-aware DRAMPower core calculation is
+available. HBM model files describe the source and validation status of their
+estimated electrical parameters.
+
+Run the complete four-channel example with:
+
+```bash
+PYTHONPATH=python python3 examples/HBM4_example_config.py
+```

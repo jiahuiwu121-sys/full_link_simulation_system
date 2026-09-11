@@ -11,6 +11,7 @@ CPP_TYPE_MAP = {
     "int": (int, None),
     "unsigned int": (int, "unsigned int"),
     "float": (float, None),
+    "double": (float, "double"),
     "bool": (bool, None),
     "std::string": (str, None),
     "std::vector<std::string>": (list, None),

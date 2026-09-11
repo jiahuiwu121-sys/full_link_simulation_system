@@ -22,7 +22,7 @@ def make_controller(standard, plugins=()):
         refresh_manager=ramulator.refresh_manager.NoRefresh(),
         row_policy=ramulator.row_policy.Open(),
         addr_mapper=ramulator.addr_mapper.RoBaRaCoCh(),
-        plugins=list(plugins),
+        controller_plugins=list(plugins),
     )
 
 

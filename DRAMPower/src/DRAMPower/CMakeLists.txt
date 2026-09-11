@@ -5,6 +5,7 @@
 find_package(DRAMUtils REQUIRED)
 
 add_library(DRAMPower
+    DRAMPower/factory/MemoryFactory.cpp
     DRAMPower/command/Command.cpp
     DRAMPower/command/Pattern.cpp
     DRAMPower/data/energy.cpp
@@ -65,6 +66,7 @@ target_sources(DRAMPower
 PUBLIC
     FILE_SET HEADERS
 FILES
+    DRAMPower/factory/MemoryFactory.h
     DRAMPower/Exceptions.h
     DRAMPower/Types.h
     DRAMPower/command/CmdType.h

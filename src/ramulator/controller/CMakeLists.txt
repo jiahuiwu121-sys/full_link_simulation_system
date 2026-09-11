@@ -31,6 +31,7 @@ target_sources(
   addr_mapper/impl/rit_addr_mapper.cpp
 
   plugin/i_controller_plugin.h
+  plugin/power_reporter.h
   plugin/controller_validation_hook.h
   plugin/impl/command_counter.cpp
   plugin/impl/cmd_trace_recorder.cpp
@@ -58,6 +59,11 @@ target_sources(
   impl/hbm_controller_base.cpp
   impl/hbm34_controller.cpp
 )
+
+if(RAMULATOR_ENABLE_DRAMPOWER)
+  target_sources(ramulator-controller PRIVATE plugin/impl/drampower.cpp)
+  target_link_libraries(ramulator-controller PRIVATE DRAMPower::DRAMPower)
+endif()
 
 target_link_libraries(
   ramulator

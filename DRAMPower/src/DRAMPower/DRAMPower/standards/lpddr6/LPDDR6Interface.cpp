@@ -177,6 +177,9 @@ void LPDDR6Interface::registerPatterns() {
         R0, R1, R2, R3
     };
     m_patternHandler.registerPattern<CmdType::ACT>(act_pattern);
+    const auto act_split = act_pattern.begin() + act_pattern.size() / 2;
+    m_patternHandler.registerPattern<CmdType::ACT1>(commandPattern_t(act_pattern.begin(), act_split));
+    m_patternHandler.registerPattern<CmdType::ACT2>(commandPattern_t(act_split, act_pattern.end()));
 
     // WR / WRA
     auto wr_gen = [](t AP) -> commandPattern_t {
@@ -229,6 +232,8 @@ void LPDDR6Interface::doCommand(const LPDDR6Command& cmd) {
         case CmdType::REFDB:
         case CmdType::REFA:
         case CmdType::ACT:
+        case CmdType::ACT1:
+        case CmdType::ACT2:
             handleCommandBus(cmd);
             break;
         case CmdType::WR:

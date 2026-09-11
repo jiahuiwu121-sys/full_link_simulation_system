@@ -1,6 +1,9 @@
 #ifndef RAMULATOR_BASE_CONFIG_NODE_H
 #define RAMULATOR_BASE_CONFIG_NODE_H
 
+#include <array>
+#include <charconv>
+#include <limits>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -10,6 +13,17 @@
 #include "ramulator/base/type.h"
 
 namespace Ramulator {
+
+template <typename T>
+inline std::string config_float_string(T value) {
+  std::array<char, 64> buffer{};
+  auto [end, error] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value,
+                                    std::chars_format::general, std::numeric_limits<T>::max_digits10);
+  if (error != std::errc{}) {
+    throw std::runtime_error("ConfigNode: failed to format floating-point value");
+  }
+  return std::string(buffer.data(), end);
+}
 
 class ConfigNode {
  public:
@@ -43,9 +57,9 @@ class ConfigNode {
   }
   ConfigNode(unsigned long long val) : m_data(std::to_string(val)) {
   }
-  ConfigNode(float val) : m_data(std::to_string(val)) {
+  ConfigNode(float val) : m_data(config_float_string(val)) {
   }
-  ConfigNode(double val) : m_data(std::to_string(val)) {
+  ConfigNode(double val) : m_data(config_float_string(val)) {
   }
   ConfigNode(bool val) : m_data(Scalar(val ? "true" : "false")) {
   }

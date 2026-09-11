@@ -40,6 +40,16 @@ float ControllerBase::get_tCK() const {
   return m_tCK_ps / 1000.0f;  // ps → ns
 }
 
+bool ControllerBase::get_power_stats(PowerStats& stats) {
+  if (!m_power_reporter) return false;
+  stats = m_power_reporter->power_stats(m_clk);
+  return true;
+}
+
+void ControllerBase::finalize_power() {
+  if (m_power_reporter) m_power_reporter->finalize_power(m_clk);
+}
+
 // ── Shared initialization ───────────────────────────────────────────────
 
 void ControllerBase::init_base() {
@@ -76,6 +86,25 @@ void ControllerBase::init_base() {
 
   // Optional plugin list — empty if not configured
   RAMULATOR_CREATE_OPTIONAL_CHILD_LIST(m_plugins, IControllerPlugin);
+  for (auto* plugin : m_plugins) {
+    if (auto* reporter = dynamic_cast<IPowerReporter*>(plugin)) {
+      if (m_power_reporter) {
+        throw std::runtime_error("A controller can have at most one power reporter plugin");
+      }
+      m_power_reporter = reporter;
+    }
+  }
+}
+
+void ControllerBase::issue_and_notify(Request& req, int command) {
+  const int saved_command = req.command;
+  req.command = command;
+  m_device.issue_command(command, req.addr_vec, m_clk);
+  m_rowpolicy->on_issue(req);
+  for (auto* plugin : m_plugins) {
+    plugin->on_issue(req);
+  }
+  req.command = saved_command;
 }
 
 // ── Shared stats registration ───────────────────────────────────────────
@@ -428,6 +457,7 @@ void ControllerBase::update_stats() {
 }
 
 void ControllerBase::finalize() {
+  finalize_power();
   update_stats();
 }
 
