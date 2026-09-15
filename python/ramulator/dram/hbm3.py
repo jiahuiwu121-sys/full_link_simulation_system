@@ -214,6 +214,10 @@ HBM3.org_presets = {
     "HBM3_8Gb_8hi":  {"density": 8192, "dq": 32, "channel_width": 32, "pseudochannel": 2, "sid": 2, "bankgroup": 4, "bank": 4, "row": 1<<13, "column": (1<<5) << 3},  # HBM CA already takes BL into account
     # die density = 16 Gb, channel density = 8 Gb
     "HBM3_16Gb_8hi": {"density": 16384, "dq": 32, "channel_width": 32, "pseudochannel": 2, "sid": 2, "bankgroup": 4, "bank": 4, "row": 1<<14, "column": (1<<5) << 3},  # HBM CA already takes BL into account
+    # HBM3E example target: 24 Gb die, 8-high stack (24 GB cube).
+    # 24 Gb needs a non-power-of-two row count; RoBaRaCoCh supports this
+    # organization through mixed-radix address decoding.
+    "HBM3E_24Gb_8Hi": {"density": 24576, "dq": 32, "channel_width": 32, "pseudochannel": 2, "sid": 2, "bankgroup": 4, "bank": 4, "row": 3<<13, "column": (1<<5) << 3},
     # die density = 32 Gb, channel density = 16 Gb
     "HBM3_32Gb_8hi": {"density": 32768, "dq": 32, "channel_width": 32, "pseudochannel": 2, "sid": 2, "bankgroup": 4, "bank": 4, "row": 1<<15, "column": (1<<5) << 3},  # HBM CA already takes BL into account
     # die density = 32 Gb, channel density = 8 Gb
@@ -232,5 +236,18 @@ HBM3.timing_presets = {
         "nRFCpb": 320, "nRREFD": 8, "nREFI": 6240,
         "nPPD": 2,
         "tCK_ps": 625,
+    },
+    # HBM3E reuses the HBM3 command/state model.  The source comparison gives
+    # an 8 Gb/s pin rate but no complete timing table, so the time-based values
+    # below preserve the physical delays of the 6.4 Gb/s HBM3 preset.
+    "HBM3E_8000Mbps": {
+        "rate": 8000, "nBL": 2, "nCL": 25, "nRCDRD": 39, "nRCDWR": 19,
+        "nRP": 33, "nRAS": 57, "nRC": 90, "nWR": 42, "nRTP": 12, "nCWL": 13,
+        "nCCDS": 2, "nCCDL": 4, "nCCDR": 3,
+        "nRRDS": 5, "nRRDL": 7, "nFAW": 30,
+        "nWTRS": 9, "nWTRL": 13, "nRTW": 25,
+        "nRFCpb": 400,
+        "nPPD": 2,
+        "tCK_ps": 500,
     },
 }

@@ -1,9 +1,13 @@
 """Example Ramulator2 configuration and simulation script using 64 HBM4 controllers."""
 
+from ramulator.reporting import print_memory_performance_report
+
 import ramulator
 
-
 NUM_CONTROLLERS = 64
+CONTROLLER_WIDTH_BITS = 32
+NOMINAL_RATE_MBPS = 8000
+RUNTIME_TICK_PS = 500 // 2  # HBM4 uses two simulator ticks per CK.
 
 
 def make_hbm4_controller():
@@ -50,30 +54,9 @@ stats = sim.stats
 # Guard here for `ramulator export`, which does not run the simulation
 # but only exports the config for pure C++ Ramulator library.
 if stats:
-    # Controller stats are under memory_system -> controller.
-    ctrl_stats = stats["memory_system"]["controller"]
-    controllers = ctrl_stats if isinstance(ctrl_stats, list) else [ctrl_stats]
-
-    total_reads = sum(ctrl["num_read_reqs"] for ctrl in controllers)
-    total_writes = sum(ctrl["num_write_reqs"] for ctrl in controllers)
-    total_row_hits = sum(ctrl["row_hits"] for ctrl in controllers)
-    total_row_misses = sum(ctrl["row_misses"] for ctrl in controllers)
-    total_row_conflicts = sum(ctrl["row_conflicts"] for ctrl in controllers)
-    active_controllers = sum(
-        1
-        for ctrl in controllers
-        if ctrl["num_read_reqs"] > 0 or ctrl["num_write_reqs"] > 0
+    print_memory_performance_report(
+        stats,
+        nominal_rate_mbps=NOMINAL_RATE_MBPS,
+        total_dq_bits=NUM_CONTROLLERS * CONTROLLER_WIDTH_BITS,
+        tick_ps=RUNTIME_TICK_PS,
     )
-
-    print(f"Controllers:           {len(controllers)}")
-    print(f"Total modeled DQ bits: {len(controllers) * 32}")
-    print(f"Active controllers:    {active_controllers}")
-    print(f"Total read requests:   {total_reads}")
-    print(f"Total write requests:  {total_writes}")
-    print(f"Total row hits:        {total_row_hits}")
-    print(f"Total row misses:      {total_row_misses}")
-    print(f"Total row conflicts:   {total_row_conflicts}")
-
-    for index, ctrl in enumerate(controllers):
-        print(f"Controller {index} cycles:       {ctrl['cycles']}")
-        print(f"Controller {index} read latency: {ctrl['avg_read_latency']:.1f} cycles")

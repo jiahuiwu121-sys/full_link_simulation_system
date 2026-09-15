@@ -1,6 +1,13 @@
 """Example Ramulator2 configuration and simulation script using HBM4."""
 
+from ramulator.reporting import print_memory_performance_report
+
 import ramulator
+
+NUM_CONTROLLERS = 1
+CONTROLLER_WIDTH_BITS = 32
+NOMINAL_RATE_MBPS = 8000
+RUNTIME_TICK_PS = 500 // 2  # HBM4 uses two simulator ticks per CK.
 
 # Configure the simulation frontend that sends memory requests
 frontend = ramulator.frontend.SimpleO3(
@@ -43,13 +50,9 @@ stats = sim.stats
 # Guard here for `ramulator export`, which does not run the simulation
 # but only exports the config for pure C++ Ramulator library
 if stats:
-    # Controller stats are under memory_system -> controller
-    ctrl_stats = stats["memory_system"]["controller"]
-
-    print(f"Controller cycles:     {ctrl_stats['cycles']}")
-    print(f"Avg read latency:      {ctrl_stats['avg_read_latency']:.1f} cycles")
-    print(f"Read requests:         {ctrl_stats['num_read_reqs']}")
-    print(f"Write requests:        {ctrl_stats['num_write_reqs']}")
-    print(f"Row hits:              {ctrl_stats['row_hits']}")
-    print(f"Row misses:            {ctrl_stats['row_misses']}")
-    print(f"Row conflicts:         {ctrl_stats['row_conflicts']}")
+    print_memory_performance_report(
+        stats,
+        nominal_rate_mbps=NOMINAL_RATE_MBPS,
+        total_dq_bits=NUM_CONTROLLERS * CONTROLLER_WIDTH_BITS,
+        tick_ps=RUNTIME_TICK_PS,
+    )

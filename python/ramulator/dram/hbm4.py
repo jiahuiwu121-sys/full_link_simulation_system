@@ -151,11 +151,11 @@ class HBM4(DRAMStandard):
         else:
             raise ValueError(f"HBM4 nRFC is not defined for {channel_density_mb:g} MB channel density")
         return math.ceil(tRFC_ns * 1000 / tCK_ps)
-    
+
     @staticmethod
     def _resolve_nREFI(tCK_ps):
         return math.ceil(3_900_000 / tCK_ps)
-    
+
     @staticmethod
     def _resolve_nREFIpb(tCK_ps, num_banks, num_bankgroups, num_sids):
         # HBM4 tREFIpb = tREFI / banks per pseudochannel
@@ -170,6 +170,10 @@ class HBM4(DRAMStandard):
 
 
 HBM4.org_presets = {
+    # Image-aligned HBM4 target: 24 Gb die, 8-high stack (24 GB cube).
+    # 24 Gb needs a non-power-of-two row count; RoBaRaCoCh supports this
+    # organization through mixed-radix address decoding.
+    "HBM4_24Gb_8Hi":  {"density": 24576, "dq": 32, "channel_width": 32, "pseudochannel": 2, "sid": 2, "bankgroup": 2, "bank": 8, "row": 3<<12, "column": (1<<5) << 3},
     "HBM4_32Gb_4Hi":  {"density": 32768, "dq": 32, "channel_width": 32, "pseudochannel": 2, "sid": 1, "bankgroup": 2, "bank": 8, "row": 1<<14, "column": (1<<5) << 3},  # HBM CA already takes BL into account
     "HBM4_32Gb_8Hi":  {"density": 32768, "dq": 32, "channel_width": 32, "pseudochannel": 2, "sid": 2, "bankgroup": 2, "bank": 8, "row": 1<<14, "column": (1<<5) << 3},  # HBM CA already takes BL into account
     "HBM4_32Gb_16Hi": {"density": 32768, "dq": 32, "channel_width": 32, "pseudochannel": 2, "sid": 4, "bankgroup": 2, "bank": 8, "row": 1<<14, "column": (1<<5) << 3},  # HBM CA already takes BL into account
@@ -185,6 +189,19 @@ HBM4.timing_presets = {
         "nPPD": 2,
         "nRFCpb": 560, "nRREFD": 8,
         "tCK_ps": 500,
+    },
+    # The comparison target specifies 11 Gb/s but not a complete timing table.
+    # Time-based values are scaled from HBM4_8000Mbps; fixed burst/command
+    # spacing values remain unchanged.
+    "HBM4_11000Mbps": {
+        "rate": 11000, "nBL": 2, "nCL": 28, "nCWL": 14,
+        "nRC": 124, "nRAS": 79, "nRP": 46, "nRCDRD": 54, "nRCDWR": 27,
+        "nRRDL": 10, "nRRDS": 7, "nFAW": 42, "nRTP": 17, "nWR": 58,
+        "nCCDL": 4, "nCCDS": 2, "nCCDR": 2,
+        "nWTRL": 18, "nWTRS": 13, "nRTW": 35,
+        "nPPD": 2,
+        "nRFCpb": 770,
+        "tCK_ps": 364,
     },
     "HBM4_16000Mbps": {
         "rate": 16000, "nBL": 2, "nCL": 40, "nCWL": 20,

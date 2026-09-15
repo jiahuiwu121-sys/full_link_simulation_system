@@ -1,10 +1,17 @@
 """Four-channel HBM4 simulation with the in-process DRAMPower backend."""
 
 from pathlib import Path
+
+from ramulator.reporting import print_memory_performance_report
+
 import ramulator
 
 ROOT = Path(__file__).resolve().parents[1]
 POWER_SPEC = ROOT / "DRAMPower/examples/hbm34/hbm4_8000_estimated.json"
+NUM_CONTROLLERS = 4
+CONTROLLER_WIDTH_BITS = 32
+NOMINAL_RATE_MBPS = 8000
+RUNTIME_TICK_PS = 500 // 2  # HBM4 uses two simulator ticks per CK.
 
 
 def make_hbm4_controller():
@@ -42,7 +49,7 @@ frontend = ramulator.frontend.SimpleO3(
 # Create a memory system with four HBM4 controllers
 mem = ramulator.memory_system.GenericDRAM(
     clock_ratio=1,
-    controllers=[make_hbm4_controller() for _ in range(4)],
+    controllers=[make_hbm4_controller() for _ in range(NUM_CONTROLLERS)],
     channel_mapper=ramulator.channel_mapper.CacheLineInterleave(),
 )
 
@@ -59,25 +66,11 @@ if stats:
     sim.finalize()
     stats = sim.stats
 
-    # Controller stats are under memory_system -> controller
-    ctrl_stats = stats["memory_system"]["controller"]
-    controllers = ctrl_stats if isinstance(ctrl_stats, list) else [ctrl_stats]
-
-    total_reads = sum(ctrl["num_read_reqs"] for ctrl in controllers)
-    total_writes = sum(ctrl["num_write_reqs"] for ctrl in controllers)
-    total_row_hits = sum(ctrl["row_hits"] for ctrl in controllers)
-    total_row_misses = sum(ctrl["row_misses"] for ctrl in controllers)
-    total_row_conflicts = sum(ctrl["row_conflicts"] for ctrl in controllers)
-
-    print(f"Controllers:           {len(controllers)}")
-    print(f"Total read requests:   {total_reads}")
-    print(f"Total write requests:  {total_writes}")
-    print(f"Total row hits:        {total_row_hits}")
-    print(f"Total row misses:      {total_row_misses}")
-    print(f"Total row conflicts:   {total_row_conflicts}")
+    print_memory_performance_report(
+        stats,
+        nominal_rate_mbps=NOMINAL_RATE_MBPS,
+        total_dq_bits=NUM_CONTROLLERS * CONTROLLER_WIDTH_BITS,
+        tick_ps=RUNTIME_TICK_PS,
+    )
     print(f"DRAM energy:           {stats['memory_system']['dram_total_energy_j']:.6e} J")
     print(f"Average DRAM power:    {stats['memory_system']['dram_average_power_w']:.6f} W")
-
-    for index, ctrl in enumerate(controllers):
-        print(f"Controller {index} cycles:       {ctrl['cycles']}")
-        print(f"Controller {index} read latency: {ctrl['avg_read_latency']:.1f} cycles")
