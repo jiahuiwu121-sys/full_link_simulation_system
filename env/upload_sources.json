@@ -1,0 +1,12 @@
+{
+  "StorageStacked": {
+    "source": "https://github.com/jiahuiwu121-sys/StorageStacked",
+    "commit": "3be39b697bdc315ae0be08ed2162c322bcf59462",
+    "destination": "."
+  },
+  "ramulator2": {
+    "source": "https://github.com/jiahuiwu121-sys/ramulator2",
+    "commit": "16b01c49667b01ac9fceea6ea258488dbdd39313",
+    "destination": "ramulator2"
+  }
+}

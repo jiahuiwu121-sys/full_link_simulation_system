@@ -3,7 +3,7 @@
 接手先读 integrate_doc/HANDOFF.md 和 integrate_doc/09_migration.md（本地交接资料），
 再读 README.md 和 docs/development.md。若交接资料未分发，以已提交文档为准。
 
-- 主仓库为git@github.com:fmq03/StorageStacked.git；提交说明用中文，push须有用户明确授权。
+- 主仓库为https://github.com/jiahuiwu121-sys/full_link_simulation_system.git；提交说明用中文，push须有用户明确授权。
 - ucie-model、axi2flit、gem5_axi、mem_sim、gem5_new 是主仓库普通目录，直接维护源码。
   不重新建立内部 .git、gitlink 或构建时向内部模块应用补丁。
 - gem5、coralnpu、vortex-gpu/vortex 是外部子模块，按 env/sources.lock.json 固定版本。

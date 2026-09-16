@@ -12,7 +12,7 @@ git commit -m "说明本次行为变化的中文提交信息"
 ```
 
 不要对五个普通目录执行git pull；它们没有独立仓库。在根目录同步并合并主仓库分支，
-主仓库地址为git@github.com:fmq03/StorageStacked.git（HTTPS地址见README）。
+主仓库地址为https://github.com/jiahuiwu121-sys/full_link_simulation_system.git（HTTPS地址见README）。
 更新主仓库后运行git submodule update --init --recursive，使外部依赖匹配主仓库记录。
 若子模块有自己的源码修改，先保存和核对这些修改，不要用reset清除本地适配。
 

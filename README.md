@@ -1,4 +1,4 @@
-# StorageStacked
+# full_link_simulation_system
 
 CPU / Vortex GPU / CoralNPU → 原生AXI256 → AXI2Flit → UCIe → 在线mem_sim的统一系统。
 
@@ -11,12 +11,14 @@ CPU / Vortex GPU / CoralNPU → 原生AXI256 → AXI2Flit → UCIe → 在线mem
 | mem_sim | 内存控制器与DRAM行为模型 |
 | protocol/include | 两端共享的AoU帧格式 |
 
+独立内存模拟器位于 [`ramulator2/`](ramulator2/README.md)，包含 HBM3、HBM4、LPDDR5、LPDDR6 及 DRAMPower 功耗模型，其构建和使用说明见该目录 README。全链路系统当前在线内存后端仍为 `mem_sim`。
+
 外部子模块仍为gem5、coralnpu、vortex-gpu/vortex（含Vortex递归依赖）。
 内部五个目录已通过保留完整历史的导入合并成为主仓库源码，不再各自维护Git仓库。
 
 ```bash
-git clone --recurse-submodules https://github.com/fmq03/StorageStacked.git
-cd StorageStacked
+git clone --recurse-submodules https://github.com/jiahuiwu121-sys/full_link_simulation_system.git
+cd full_link_simulation_system
 bash env/bootstrap_xpu.sh
 bash env/build_xpu.sh
 bash env/run_memsim.sh results/acceptance-memsim
@@ -37,4 +39,6 @@ bash env/run_xpu.sh results/acceptance-xpu
 旧AXI256与monorepo报告继续保留；HTML交接请复制整个用例目录。
 结果/构建产物和integrate_doc本地交接资料不入库。原/mnt/d/storagestacked保留。
 运行结果不随Git克隆分发，需要在本机运行生成。HTML查看方式见配置指引；推荐通过本机HTTP服务打开。
-主仓库：https://github.com/fmq03/StorageStacked 。新提交说明使用中文。
+主仓库：https://github.com/jiahuiwu121-sys/full_link_simulation_system 。新提交说明使用中文。
+
+本次导入的源码版本见 [env/upload_sources.json](env/upload_sources.json)；两部分原始 Git 历史均已保留。
