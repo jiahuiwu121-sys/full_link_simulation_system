@@ -1,0 +1,90 @@
+{
+  "memoryType": "HBM3",
+  "memoryId": "HBM3E_24Gb_8Hi_HBM3E_8000Mbps_PC1_generated",
+  "memarchitecturespec": {
+    "nbrOfChannels": 1,
+    "nbrOfPseudoChannels": 1,
+    "nbrOfSIDs": 2,
+    "nbrOfBankGroups": 4,
+    "nbrOfBanksPerGroup": 4,
+    "nbrOfRows": 24576,
+    "nbrOfColumns": 256,
+    "nbrOfDevices": 1,
+    "burstLength": 8,
+    "dataRate": 4,
+    "width": 32
+  },
+  "memtimingspec": {
+    "tCK": 5e-10,
+    "ticksPerCK": 2,
+    "RAS": 57,
+    "RTP": 12,
+    "WL": 13,
+    "WR": 42,
+    "RP": 33,
+    "RCDRD": 39,
+    "RCDWR": 19,
+    "RFC": 900,
+    "RFCPB": 400,
+    "RFMAB": 900,
+    "RFMPB": 400
+  },
+  "mempowerspec": {
+    "vdd": 1.1,
+    "vddq": 1.1,
+    "idd0": 0.0446,
+    "idd2n": 0.0383,
+    "idd3n": 0.0346,
+    "idd4r": 0.77935,
+    "idd4w": 0.622725,
+    "idd5ab": 0.0446,
+    "idd5pb": 0.0446,
+    "idd6n": 0.0,
+    "idd2p": 0.0,
+    "idd3p": 0.0,
+    "iddBeta": 0.0446,
+    "vpp": 1.8,
+    "ipp0": 0.0,
+    "ipp2n": 0.0,
+    "ipp3n": 0.0,
+    "ipp4r": 0.0,
+    "ipp4w": 0.0,
+    "ipp5ab": 0.0,
+    "ipp5pb": 0.0,
+    "ippBeta": 0.0,
+    "bankWiseRho": 1.0,
+    "rfmAbPowerRatio": 1.0,
+    "rfmPbPowerRatio": 1.0
+  },
+  "datapattern": {
+    "enabled": true,
+    "floorPjPerBit": 2.759,
+    "coefficientDQ": 1.192,
+    "coefficientTSV": 1.331,
+    "coefficientBG": 0.72,
+    "dqRate": 0.5,
+    "tsvRate": 0.5,
+    "bgRate": 0.0,
+    "referenceDQRate": 0.0,
+    "referenceTSVRate": 0.0,
+    "referenceBGRate": 0.0,
+    "applyToWrites": true
+  },
+  "interfacepowerspec": {
+    "readEnergyPerBit": 0.0,
+    "writeEnergyPerBit": 0.0
+  },
+  "modelMetadata": {
+    "modelKind": "rate_scaled_from_public_HBM3E_data",
+    "parameterSource": "CMU-SAFARI/HBM-Power HBM3E 6.4-Gbps all-zero current profile and data-pattern equation; read/write dynamic current is scaled linearly with the configured rate when it differs from 6.4 Gbps",
+    "reference": "https://github.com/CMU-SAFARI/HBM-Power/tree/artifact",
+    "scope": "one Ramulator2 controller containing 1 32-bit pseudo-channel(s)",
+    "notes": "Generated organization/timing exactly follows the paired Ramulator2 DRAM object. IDD5 and RFM use IDD0-based estimates; external-link energy is disabled because IDD4 is treated as total read/write current.",
+    "absoluteAccuracyValidated": false
+  },
+  "generatedFrom": {
+    "orgPreset": "HBM3E_24Gb_8Hi",
+    "timingPreset": "HBM3E_8000Mbps",
+    "generator": "ramulator.power.HBM34PowerModel"
+  }
+}

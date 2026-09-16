@@ -1,0 +1,33 @@
+#ifndef DRAMPOWER_STANDARDS_TEST_ACCESSOR_H
+#define DRAMPOWER_STANDARDS_TEST_ACCESSOR_H
+
+#include "DRAMPower/standards/lpddr4/LPDDR4Core.h"
+#include "DRAMPower/standards/lpddr5/LPDDR5Core.h"
+#include "DRAMPower/standards/lpddr6/LPDDR6Core.h"
+#include "DRAMPower/standards/hbm2/HBM2Core.h"
+
+namespace DRAMPower::internal {
+
+// Tests access to private members of LPDDR4, LPDDR5, LPDDR6, and HBM2 classes.
+// https://github.com/google/googletest/blob/main/docs/advanced.md#testing-private-code
+template<typename Core>
+class TestAccessor {
+public:
+    static std::vector<Rank>& getRanks(Core& core) {
+        return core.m_ranks;
+    }
+};
+
+// Specializations for each standard
+static const TestAccessor<LPDDR4Core> LPDDR4TestAccessor;
+static const TestAccessor<LPDDR5Core> LPDDR5TestAccessor;
+static const TestAccessor<LPDDR6Core> LPDDR6TestAccessor;
+static const TestAccessor<HBM2Core> HBM2TestAccessor;
+
+#ifndef DRAMPOWER_TESTING
+#error "test-internal.h should only be included in test files"
+#endif
+
+} // namespace DRAMPower::internal
+
+#endif /* DRAMPOWER_STANDARDS_TEST_ACCESSOR_H */

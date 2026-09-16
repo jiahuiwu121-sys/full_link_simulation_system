@@ -1,0 +1,199 @@
+#ifndef DRAMPOWER_COMMAND_CMDTYPE_H
+#define DRAMPOWER_COMMAND_CMDTYPE_H
+
+#include <iostream>
+#include <string>
+
+namespace DRAMPower
+{
+
+// Taken from DRAM 4.0
+//												DRAMSys  
+//												\	\__>  DRAMPower
+//												 \            \_v
+//												  \_______> DRAMCommon	
+enum class CmdType {
+	NOP = 0,    			// 0
+	RD,     				// 1
+	WR,     				// 2
+	RDA,    				// 3
+	WRA,    				// 4
+	ACT,    				// 5
+	PRE,    				// 6
+	REFB,   				// 7
+	REFP2B,					// 8
+    REFDB,                  // 9
+	PRESB,  				// 10
+	REFSB,  				// 11
+	PREA,   				// 12
+	REFA,   				// 13
+	PDEA,   				// 14
+	PDEP,   				// 15
+	PDXA,   				// 16
+	PDXP,   				// 17
+	SREFEN, 				// 18
+	SREFEX,  				// 19
+	DSMEN,					// 20
+	DSMEX,					// 21
+	END_OF_SIMULATION,		// 22
+	RFMAB,					// 23
+	RFMPB,					// 24
+	ACT1,					// 25, LPDDR interface-only first activation word
+	ACT2,					// 26, LPDDR interface-only second activation word
+	COUNT,					// 27
+};
+
+namespace CmdTypeUtil
+{
+	constexpr bool needs_data(CmdType cmd)
+	{
+		switch (cmd)
+		{
+		case CmdType::RD:
+		case CmdType::RDA:
+		case CmdType::WR:
+		case CmdType::WRA:
+			return true;
+		default:
+			return false;
+		};
+	};
+
+	// An invalid string is mapped to CmdType::NOP
+	constexpr CmdType from_string(const std::string_view& str)
+	{
+		if (str == "NOP")
+			return CmdType::NOP;
+		if (str == "ACT")
+			return CmdType::ACT;
+		if (str == "PRE")
+			return CmdType::PRE;
+		if (str == "PREA")
+			return CmdType::PREA;
+		if (str == "PRESB")
+			return CmdType::PRESB;
+		if (str == "REFA")
+			return CmdType::REFA;
+		if (str == "REFB")
+			return CmdType::REFB;
+		if (str == "REFSB")
+			return CmdType::REFSB;
+		if (str == "REFP2B")
+			return CmdType::REFP2B;
+		if (str == "REFDB")
+			return CmdType::REFDB;
+		if (str == "RD")
+			return CmdType::RD;
+		if (str == "RDA")
+			return CmdType::RDA;
+		if (str == "WR")
+			return CmdType::WR;
+		if (str == "WRA")
+			return CmdType::WRA;
+		if (str == "PDEA")
+			return CmdType::PDEA;
+		if (str == "PDEP")
+			return CmdType::PDEP;
+		if (str == "PDXA")
+			return CmdType::PDXA;
+		if (str == "PDXP")
+			return CmdType::PDXP;
+		if (str == "SREFEN")
+			return CmdType::SREFEN;
+		if (str == "SREFEX")
+			return CmdType::SREFEX;
+		if (str == "DSMEN")
+			return CmdType::DSMEN;
+		if (str == "DSMEX")
+			return CmdType::DSMEX;
+		if (str == "END")
+			return CmdType::END_OF_SIMULATION;
+		if (str == "RFMab" || str == "RFMAB")
+			return CmdType::RFMAB;
+		if (str == "RFMpb" || str == "RFMPB")
+			return CmdType::RFMPB;
+		if (str == "ACT1")
+			return CmdType::ACT1;
+		if (str == "ACT2")
+			return CmdType::ACT2;
+		if (str == "PREpb")
+			return CmdType::PRE;
+		if (str == "PREab")
+			return CmdType::PREA;
+		if (str == "REFpb")
+			return CmdType::REFB;
+		if (str == "REFab")
+			return CmdType::REFA;
+		return CmdType::NOP;
+	};
+
+	// COUNT is mapped to "NOP"
+	constexpr const char * to_string(CmdType cmd)
+	{
+		switch (cmd)
+		{
+		case CmdType::NOP:
+		case CmdType::COUNT:
+			return "NOP";
+		case CmdType::ACT:
+			return "ACT";
+		case CmdType::PRE:
+			return "PRE";
+		case CmdType::PREA:
+			return "PREA";
+		case CmdType::REFA:
+			return "REFA";
+		case CmdType::REFB:
+			return "REFB";
+		case CmdType::RD:
+			return "RD";
+		case CmdType::RDA:
+			return "RDA";
+		case CmdType::WR:
+			return "WR";
+		case CmdType::WRA:
+			return "WRA";
+		case CmdType::REFSB:
+			return "REFSB";
+		case CmdType::REFP2B:
+			return "REFP2B";
+		case CmdType::REFDB:
+			return "REFDB";
+		case CmdType::PRESB:
+			return "PRESB";
+		case CmdType::PDEA:
+			return "PDEA";
+		case CmdType::PDEP:
+			return "PDEP";
+		case CmdType::PDXA:
+			return "PDXA";
+		case CmdType::PDXP:
+			return "PDXP";
+		case CmdType::SREFEN:
+			return "SREFEN";
+		case CmdType::SREFEX:
+			return "SREFEX";
+		case CmdType::DSMEN:
+			return "DSMEN";
+		case CmdType::DSMEX:
+			return "DSMEX";
+		case CmdType::END_OF_SIMULATION:
+			return "END_OF_SIMULATION";
+		case CmdType::RFMAB:
+			return "RFMab";
+		case CmdType::RFMPB:
+			return "RFMpb";
+		case CmdType::ACT1:
+			return "ACT1";
+		case CmdType::ACT2:
+			return "ACT2";
+		}
+		return "NOP";
+	}
+
+	inline std::ostream& operator<<(std::ostream& os, CmdType cmd) {
+		return os << to_string(cmd);
+	}
+}
+}
+#endif /* DRAMPOWER_COMMAND_CMDTYPE_H */

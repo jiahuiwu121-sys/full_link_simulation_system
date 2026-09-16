@@ -1,0 +1,66 @@
+#ifndef DRAMPOWER_DDR_RANK_H
+#define DRAMPOWER_DDR_RANK_H
+
+#include <DRAMPower/command/CmdType.h>
+#include <DRAMPower/dram/Bank.h>
+#include <DRAMPower/Types.h>
+
+#include <vector>
+
+namespace DRAMPower {
+
+// Power-Down and Self-refresh related memory states
+enum class MemState {
+	NOT_IN_PD = 0,
+	PDN_ACT,
+	PDN_PRE,
+	SREF,
+	DSM,
+};
+
+
+struct Rank {
+public:
+// Variables
+	MemState memState = MemState::NOT_IN_PD;
+	struct {
+		interval_t pre; // useful ???
+		interval_t act;
+		interval_t ref;
+		interval_t sref;
+		interval_t powerDownAct;
+		interval_t powerDownPre;
+		interval_t deepSleepMode;
+	} cycles;
+	struct {
+		uint64_t selfRefresh = 0;
+		uint64_t deepSleepMode = 0;
+	} counter = { 0 };
+	std::vector<Bank> banks;
+
+public:
+// Constructors
+	Rank(std::size_t numBanks);
+
+// Functions
+public:
+	static std::size_t countActiveBanks_impl(const std::vector<Bank>& banks);
+	static bool isActive_impl(const std::vector<Bank>& banks);
+	bool isActive();
+	std::size_t countActiveBanks() const;
+};
+
+struct RankInterface {
+	uint64_t 	seamlessPrePostambleCounter_read	= 0;
+	uint64_t 	seamlessPrePostambleCounter_write	= 0;
+	uint64_t	mergedPrePostambleCounter_read		= 0;
+	uint64_t	mergedPrePostambleCounter_write		= 0;
+	timestamp_t	mergedPrePostambleTime_read			= 0;
+	timestamp_t	mergedPrePostambleTime_write		= 0;
+	timestamp_t lastReadEnd = 0;
+	timestamp_t lastWriteEnd = 0;
+};
+
+} // namespace DRAMPower
+
+#endif /* DRAMPOWER_DDR_RANK_H */
