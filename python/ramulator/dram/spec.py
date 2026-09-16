@@ -81,6 +81,10 @@ class DRAMStandard(Component):
     internal_prefetch_size = 8
     data_payload_bytes = None
     read_latency = "nCL + nBL"
+    # Optional delay from a write command to completion of its data burst.
+    # Standards that define this can expose controller-side write latency
+    # statistics without changing posted-write callback behavior.
+    write_latency = None
     row_commands = []  # type: list[str]  — commands on the row bus (dual-bus standards)
     column_commands = []  # type: list[str]  — commands on the column bus (dual-bus standards)
 
@@ -172,7 +176,10 @@ class DRAMStandard(Component):
         if cw % dq != 0:
             raise ValueError(f"{cls.name}: channel_width ({cw}) must be a multiple of dq ({dq})")
         if cls.data_payload_bytes is not None and cls.data_payload_bytes <= 0:
-            raise ValueError(f"{cls.name}: data_payload_bytes must be positive, got {cls.data_payload_bytes}")
+            raise ValueError(
+                f"{cls.name}: data_payload_bytes must be positive, "
+                f"got {cls.data_payload_bytes}"
+            )
 
         # ---- Single-place CK → tick conversion ----
         # All Python-facing values (presets, command_cycles, constraint
@@ -256,6 +263,8 @@ class DRAMStandard(Component):
             "read_latency": cls._eval_expr(cls.read_latency, timing_dict),
             "timing_constraints": constraints,
         }
+        if cls.write_latency is not None:
+            config["write_latency"] = cls._eval_expr(cls.write_latency, timing_dict)
         if cls.data_payload_bytes is not None:
             config["data_payload_bytes"] = cls.data_payload_bytes
         return config

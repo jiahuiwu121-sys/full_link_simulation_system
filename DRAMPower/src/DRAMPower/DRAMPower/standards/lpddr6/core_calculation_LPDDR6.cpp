@@ -1,5 +1,7 @@
 #include "core_calculation_LPDDR6.h"
 
+#include <stdexcept>
+
 #include <DRAMPower/standards/lpddr6/LPDDR6.h>
 
 namespace DRAMPower {
@@ -82,8 +84,11 @@ namespace DRAMPower {
             auto I_B = I_rho + B * (I_1 - I_rho);
             auto I_2 = I_1 + (I_1 - I_rho);
             auto I_theta = (IDD_0 * (t_RP + t_RAS) - IBeta * t_RP) * (1 / t_RAS);
-            auto IDD5PDB_B =
-                (IDD5PDB * (t_REFI / 8) - IDD2N * ((t_REFI / 8) - t_RFCDB)) * (1.0 / t_RFCDB);
+            // All-bank-only models can omit dual-bank timing. Avoid NaN from
+            // 0 * infinity when no dual-bank refresh commands were issued.
+            auto IDD5PDB_B = t_RFCDB > 0.0
+                ? (IDD5PDB * (t_REFI / 8) - IDD2N * ((t_REFI / 8) - t_RFCDB)) / t_RFCDB
+                : 0.0;
 
             size_t energy_offset = 0;
             size_t bank_offset = 0;
@@ -94,6 +99,9 @@ namespace DRAMPower {
                     bank_offset = i * m_memSpec.numberOfBanks;
                     for (std::size_t b = 0; b < m_memSpec.numberOfBanks; ++b) {
                         const auto &bank = stats.bank[bank_offset + b];
+                        if (bank.counter.refDualBanks > 0 && t_RFCDB <= 0.0) {
+                            throw std::runtime_error("LPDDR6 dual-bank refresh requires a positive RFCdb timing");
+                        }
 
                         energy.bank_energy[energy_offset + b].E_act +=
                             E_act(VDD, I_theta, I_1, t_RAS, bank.counter.act);

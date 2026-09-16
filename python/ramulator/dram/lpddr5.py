@@ -7,6 +7,7 @@ class LPDDR5(DRAMStandard):
     name = "LPDDR5"
     internal_prefetch_size = 16      # BL16
     read_latency = "nCL + nBL_min"
+    write_latency = "nCWL + nBL_min"
 
     # ---- Hierarchy (level name -> init state) ----
     levels = {

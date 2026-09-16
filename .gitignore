@@ -30,6 +30,8 @@ sweep_log.txt
 
 *.out
 *.json
+!examples/power_specs/
+!examples/power_specs/*.generated.json
 
 # Visualizer
 *.ram2bin

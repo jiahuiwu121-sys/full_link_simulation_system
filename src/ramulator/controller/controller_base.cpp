@@ -152,6 +152,9 @@ void ControllerBase::setup_base(IFrontEnd* frontend, IMemorySystem* memory_syste
 
   m_stats.add("read_latency", s_read_latency);
   m_stats.add("avg_read_latency", s_avg_read_latency);
+  m_stats.add("write_latency", s_write_latency);
+  m_stats.add("num_write_latency_samples", s_num_write_latency_samples);
+  m_stats.add("avg_write_latency", s_avg_write_latency);
 
   m_stats.add("read_throughput_MBps", s_read_throughput_MBps);
   m_stats.add("write_throughput_MBps", s_write_throughput_MBps);
@@ -262,9 +265,15 @@ void ControllerBase::retire_request(ReqBuffer::iterator& req_it, ReqBuffer& buff
     m_pending.push_back(*req_it);
     s_num_read_reqs_served++;
   } else if (req_it->type_id == Request::Type::Write) {
-    // Write: For now we call the callback here.
-    // TODO: We could also do it after a write_latency (e.g., nCWL+nBL)
-    // similarily as reads
+    // Preserve posted-write callback behavior, but account for the modeled
+    // completion of the write data burst when the standard provides it.
+    // Coalesced writes never reach this path and therefore do not duplicate
+    // the physical DRAM write-latency sample.
+    if (m_device.m_spec->write_latency >= 0) {
+      Clk_t modeled_depart = m_clk + m_device.m_spec->write_latency;
+      s_write_latency += modeled_depart - req_it->arrive;
+      s_num_write_latency_samples++;
+    }
     if (req_it->callback) {
       req_it->callback(*req_it);
     }
@@ -443,6 +452,8 @@ void ControllerBase::set_write_mode() {
 
 void ControllerBase::update_stats() {
   s_avg_read_latency = (s_num_read_reqs_served > 0) ? (float)s_read_latency / (float)s_num_read_reqs_served : 0;
+  s_avg_write_latency =
+      (s_num_write_latency_samples > 0) ? (float)s_write_latency / (float)s_num_write_latency_samples : 0;
 
   s_queue_len_avg = (m_measured_clk > 0) ? (float)s_queue_len / (float)m_measured_clk : 0;
   s_read_queue_len_avg = (m_measured_clk > 0) ? (float)s_read_queue_len / (float)m_measured_clk : 0;
@@ -498,6 +509,9 @@ void ControllerBase::reset_stats() {
 
   s_read_latency = 0;
   s_avg_read_latency = 0;
+  s_write_latency = 0;
+  s_num_write_latency_samples = 0;
+  s_avg_write_latency = 0;
   s_read_throughput_MBps = 0;
   s_write_throughput_MBps = 0;
   s_total_throughput_MBps = 0;

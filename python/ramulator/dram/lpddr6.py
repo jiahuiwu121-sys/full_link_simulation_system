@@ -11,6 +11,7 @@ class LPDDR6(DRAMStandard):
     internal_prefetch_size = 16
     data_payload_bytes = 32
     read_latency = "nRL + nBL_min"
+    write_latency = "nWL + nBL_min"
 
     levels = {
         "Channel":      "N_A",

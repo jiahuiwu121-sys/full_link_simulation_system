@@ -46,6 +46,11 @@ void DRAMSpec::load_config(const ConfigNode& config) {
   // Read latency (pre-computed by Python)
   read_latency = dram["read_latency"].as<int>();
 
+  // Optional write-command-to-data-completion latency (pre-computed by
+  // Python). A negative value means that the DRAM standard does not model it.
+  ConfigNode write_latency_node = dram["write_latency"];
+  write_latency = write_latency_node ? write_latency_node.as<int>() : -1;
+
   // Timing constraints (pre-computed by Python)
   timing_cons.resize(level_count, std::vector<std::vector<TimingConsEntry>>(command_count));
 

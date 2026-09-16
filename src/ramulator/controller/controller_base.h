@@ -127,6 +127,9 @@ class ControllerBase : public IController, public Implementation {
 
   size_t s_read_latency = 0;
   float s_avg_read_latency = 0;
+  size_t s_write_latency = 0;
+  size_t s_num_write_latency_samples = 0;
+  float s_avg_write_latency = 0;
 
   float s_read_throughput_MBps = 0;
   float s_write_throughput_MBps = 0;

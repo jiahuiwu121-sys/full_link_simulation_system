@@ -93,6 +93,7 @@ struct DRAMSpec {
   int channel_width = -1;
   int data_payload_bytes = -1;
   Clk_t read_latency = -1;
+  Clk_t write_latency = -1;
 
   // Per-level/command arrays
   Organization organization;

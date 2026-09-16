@@ -8,6 +8,7 @@ class HBM4(DRAMStandard):
     internal_prefetch_size = 8
     tick_multiplier = 2
     read_latency = "nCL + nBL"
+    write_latency = "nCWL + nBL"
 
     levels = {
         "Channel":        "N_A",

@@ -8,6 +8,7 @@ class HBM3(DRAMStandard):
     internal_prefetch_size = 8       # BL8
     tick_multiplier = 2              # 1 tick = half CK (models half-cycle row cmds)
     read_latency = "nCL + nBL"
+    write_latency = "nCWL + nBL"
 
     # ---- Hierarchy (level name -> init state) ----
     levels = {

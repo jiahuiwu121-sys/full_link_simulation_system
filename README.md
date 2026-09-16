@@ -1560,6 +1560,42 @@ controller = ramulator.controller.HBM34(
 )
 ```
 
+For HBM3/HBM4 configurations, prefer `HBM34PowerModel` when organization or
+timing presets may change. It treats the Ramulator DRAM object as the single
+source of truth and regenerates a matching DRAMPower memspec before controller
+construction:
+
+```python
+from ramulator.power import HBM34PowerModel
+
+def make_dram():
+    return ramulator.dram.HBM4(
+        org_preset=ORG_PRESET,
+        timing_preset=TIMING_PRESET,
+        pseudochannel=1,
+    )
+
+power_model = HBM34PowerModel(
+    make_dram(), "examples/power_specs/my_hbm4.generated.json"
+)
+controller = ramulator.controller.HBM34(
+    dram=make_dram(),
+    scheduler=ramulator.scheduler.FRFCFSRowHit(),
+    refresh_manager=ramulator.refresh_manager.HBM34PerBankRefresh(),
+    row_policy=ramulator.row_policy.Open(),
+    addr_mapper=ramulator.addr_mapper.RoBaRaCoCh(),
+    controller_plugins=[power_model.plugin()],
+)
+```
+
+Changing `org_preset`, `timing_preset`, or an organization/timing override now
+updates both simulators together. Changing only the trace needs no memspec
+change: DRAMPower automatically consumes the newly issued command stream.
+Generated organization and timing values are exact copies of the resolved
+Ramulator values. The HBM electrical/current parameters remain estimates and
+the generated metadata marks their source and validation status; HBM4 rates
+above 8 Gb/s are explicitly marked as out-of-range extrapolations.
+
 The memory-system statistics contain `dram_core_energy_j`,
 `dram_interface_energy_j`, `dram_total_energy_j`, and
 `dram_average_power_w`. Per-channel component and command-class breakdowns are
