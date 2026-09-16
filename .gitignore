@@ -1,0 +1,41 @@
+# Reference delivery stays on disk and is distributed separately when needed.
+/zhongxing-full-environment-20260831/
+
+# 本地交接资料单独保留。
+/integrate_doc/
+
+# Workspace build, dependency, result and handoff-package directories.
+/build/
+/build-*/
+/results/
+/outputs/
+/dist/
+/toolchains/
+/vortex-gpu/vxbuild/
+/vortex-gpu/build*/
+
+# Local environments and editor state; component rules live inside each directory.
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+.cache/
+.vscode/
+.idea/
+__pycache__/
+*.py[cod]
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Root-level simulation/tool output.
+/*.vcd
+/*.fst
+/*.fsdb
+/*.log
+/verdiLog/
+/vfastLog/
+/novas.conf
+/novas.rc
