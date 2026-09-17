@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCKS = ('sources.lock.json', 'conda-linux-64.lock',
-         'xpu-runtime-linux-64.lock', 'xpu-artifacts.lock.json', 'vendored_sources.json')
+         'xpu-runtime-linux-64.lock', 'xpu-artifacts.lock.json', 'vendored_sources.json', 'ramulator-artifacts.lock.json')
 MAMBA_URL = 'https://micro.mamba.pm/api/micromamba/linux-64/2.3.3'
 MAMBA_SHA = 'e7274528ceb9c20d048a428d6c22d7e02e268f8ffb762c4c365422347c8b8ba2'
 
@@ -136,6 +136,14 @@ def pack(folder, deps):
         copy_file(source, folder / 'cache' / relative)
         downloads.append(dict(item, path='cache/' + relative))
 
+    native = json.loads((ROOT/'env/ramulator-artifacts.lock.json').read_text())
+    for item in native['dependencies']:
+        relative = 'downloads/ramulator2/' + item['name'] + '-' + item['version'] + '.archive'
+        source = deps/relative
+        if not source.exists() or digest(source) != item['sha256']:
+            raise RuntimeError('Missing or incorrect Ramulator2 cache: ' + str(source))
+        copy_file(source, folder/'cache'/relative)
+        downloads.append(dict(item, path='cache/'+relative))
     # Download cache only: no Bazel execution root, compiler outputs or server state.
     cache = deps / 'bazel/cache/repos/v1'
     if cache.exists():

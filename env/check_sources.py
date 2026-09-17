@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check project-owned source directories and pinned external submodules."""
 import argparse
+import os
 import json
 from pathlib import Path
 import subprocess
@@ -66,7 +67,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--only", nargs="+", choices=tuple(LOCAL_SOURCES) + tuple(expected),
                         help="仅检查指定模块；默认检查完整链路所需源码")
-    selected = parser.parse_args().only or list(LOCAL_SOURCES) + list(expected)
+    parser.add_argument('--memory-backend', choices=['ramulator2','memsim'],
+                        default=os.environ.get('SS_MEMORY_BACKEND','ramulator2'))
+    parser.add_argument('--xpu', action='store_true', help='Also require the locked Vortex submodules')
+    args = parser.parse_args()
+    common = ['gem5','gem5_new','gem5_axi','axi2flit','ucie-model','protocol','ramulator2']
+    selected = args.only or common + (['mem_sim'] if args.memory_backend == 'memsim' else [])
+    if args.xpu and not args.only:
+        selected += ['coralnpu'] + list(expected)
     errors = []
     for name in dict.fromkeys(selected):
         try:

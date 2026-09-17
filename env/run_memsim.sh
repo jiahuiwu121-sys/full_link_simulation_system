@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export SS_MEMORY_BACKEND=memsim
 source "$(dirname -- "${BASH_SOURCE[0]}")/activate.sh"
 [[ -x "$AXI_GEM5_BIN" ]] || { echo '请先执行 bash env/build.sh' >&2; exit 1; }
 destination=${1:-"$SS_ROOT/results/memsim-$(date -u +%Y%m%dT%H%M%SZ)"}

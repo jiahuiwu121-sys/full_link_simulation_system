@@ -1,0 +1,18 @@
+diff --git a/sw/runtime/common/vm.cpp b/sw/runtime/common/vm.cpp
+--- a/sw/runtime/common/vm.cpp
++++ b/sw/runtime/common/vm.cpp
+@@ -8,13 +8,13 @@
+ // VMManager is always compiled into libvortex.so — VM is a runtime device
+ // property, not a compile-time #ifdef. The Sv32/Sv39 split comes from
+ // VX_VM_ADDR_MODE (VX_types.h); HW-private VX_config.h is not included.
++#include <cassert>
+ #include <VX_types.h>
+ #include "vm.h"
+ 
+ #include <vortex.h>
+ #include <common.h>
+ #include <util.h>
+-#include <cassert>
+ #include <cstdlib>
+ #include <cstring>
+ #include <iostream>

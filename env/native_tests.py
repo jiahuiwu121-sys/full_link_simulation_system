@@ -1,11 +1,12 @@
 """Verify the actual CTest plan and completed native test count."""
 import json
 
-def passed_count(root):
+def passed_count(root, backend="memsim"):
     tests = json.loads((root / 'native-test-plan.json').read_text())['tests']
     names = {t['name'] for t in tests}
     required = {'sequence_tests', 'phy_tests', 'config_tests', 'timing_boundary_tests',
                 'scheduler_contract_tests', 'model_config_tests', 'result_contract'}
+    if backend == "ramulator2": required = {"online_contract", "target_backing_contract"}
     assert required <= names, required - names
     assert len(names) == len(tests)
     count = len(tests)

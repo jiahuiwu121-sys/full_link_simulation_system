@@ -50,6 +50,16 @@ void ControllerBase::finalize_power() {
   if (m_power_reporter) m_power_reporter->finalize_power(m_clk);
 }
 
+bool ControllerBase::has_pending_demand() const {
+  if (!m_pending.empty()) return true;
+  for (const auto* buffer : {&m_read_buffer, &m_write_buffer, &m_active_buffer, &m_priority_buffer}) {
+    for (const auto& req : buffer->buffer) {
+      if (req.integration_token) return true;
+    }
+  }
+  return false;
+}
+
 // ── Shared initialization ───────────────────────────────────────────────
 
 void ControllerBase::init_base() {
@@ -104,6 +114,7 @@ void ControllerBase::issue_and_notify(Request& req, int command) {
   for (auto* plugin : m_plugins) {
     plugin->on_issue(req);
   }
+  if (issue_observer) issue_observer(req, *this);
   req.command = saved_command;
 }
 

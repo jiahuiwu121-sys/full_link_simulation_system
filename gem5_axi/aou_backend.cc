@@ -3,7 +3,10 @@
 #include "ucie_link.h"
 #include "aou_target.h"
 #include "simple_burst_memory.h"
+#include "ramulator_backend.hh"
+#ifdef SS_HAVE_MEMSIM
 #include "memsim_backend.hh"
+#endif
 #include "sim/core.hh"
 #include "sim/cur_tick.hh"
 #include <fstream>
@@ -36,7 +39,24 @@ struct AouBackend::Fabric : sc_module {
     UcieLink link;
     AouTarget target;
     std::unique_ptr<SimpleBurstMemory> simple;
+    std::unique_ptr<RamulatorBackend> ramulator;
+#ifdef SS_HAVE_MEMSIM
     std::unique_ptr<MemSimBackend> memory;
+#endif
+    uint64_t memoryCompleted() const {
+        if (ramulator) return ramulator->completed;
+#ifdef SS_HAVE_MEMSIM
+        if (memory) return memory->completed;
+#endif
+        return simple->completed;
+    }
+    uint64_t memoryErrors() const {
+        if (ramulator) return ramulator->error_responses;
+#ifdef SS_HAVE_MEMSIM
+        if (memory) return memory->error_responses;
+#endif
+        return simple->error_responses;
+    }
     struct Cursor { uint64_t addr; unsigned size, left; };
     std::deque<Cursor> writes;
     std::map<unsigned, Cursor> reads;
@@ -91,11 +111,18 @@ struct AouBackend::Fabric : sc_module {
         target.clk(o.clk); target.rst_n(o.resetn);
         target.link_rx(mem_rx); target.link_tx(mem_tx);
         target.mem_req(requests); target.mem_rsp(responses);
-        if (p.memory_backend == "memsim") {
+        if (p.memory_backend == "ramulator2") {
+            ramulator = std::make_unique<RamulatorBackend>("memory", p.base, p.size,
+                p.ramulator_slots, p.ramulator_children, p.ramulator_response_hold,
+                p.ramulator_config, p.trace_dir);
+            ramulator->request(requests); ramulator->response(responses);
+#ifdef SS_HAVE_MEMSIM
+        } else if (p.memory_backend == "memsim") {
             memory = std::make_unique<MemSimBackend>("memory", p.base, p.size,
                 p.memsim_slots, p.memsim_channels, p.memsim_scale,
                 p.memsim_queue, p.memsim_response_hold, p.trace_dir);
             memory->request(requests); memory->response(responses);
+#endif
         } else if (p.memory_backend == "simple") {
             simple = std::make_unique<SimpleBurstMemory>("memory", p.base, p.size,
                 sc_time::from_value(p.period * p.latency), sc_time::from_value(p.period));
@@ -267,11 +294,14 @@ void AouBackend::finish(const std::string& dir) {
     auto& s=*fabric; s.log.flush(); s.flit_log.flush(); s.soc_log.flush(); s.mem_log.flush();
     sc_assert(s.writes.empty() && s.reads.empty());
     sc_assert(s.bridge.order_violations()==0);
+    if (s.ramulator) s.ramulator->finish();
+#ifdef SS_HAVE_MEMSIM
     if (s.memory) s.memory->finish();
+#endif
     std::ofstream f(dir+"/aou_summary.json");
     f << "{\"width\":256,\"planes\":" << s.planes
-      << ",\"memory_completed\":" << (s.memory ? s.memory->completed : s.simple->completed)
-      << ",\"memory_errors\":" << (s.memory ? s.memory->error_responses : s.simple->error_responses)
+      << ",\"memory_completed\":" << s.memoryCompleted()
+      << ",\"memory_errors\":" << s.memoryErrors()
       << ",\"target_reads\":" << s.target.reads << ",\"target_writes\":" << s.target.writes
       << ",\"target_read_beats\":" << s.target.read_beats
       << ",\"target_write_beats\":" << s.target.write_beats

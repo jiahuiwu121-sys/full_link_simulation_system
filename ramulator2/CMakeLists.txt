@@ -102,6 +102,25 @@ endif()
 
 add_subdirectory(src/ramulator)
 
+option(RAMULATOR_ONLINE_INTEGRATION "Build the StorageStacked C ABI" OFF)
+if(RAMULATOR_ONLINE_INTEGRATION)
+  target_sources(ramulator PRIVATE integration/online.cpp)
+  enable_testing()
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_executable(target_backing_contract ../gem5_axi/tests/target_backing_store_test.cc)
+  target_include_directories(target_backing_contract PRIVATE ../gem5_axi)
+  add_test(NAME target_backing_contract COMMAND target_backing_contract)
+  add_test(NAME online_contract COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/integration/check_online.py
+    $<TARGET_FILE:ramulator> ${CMAKE_BINARY_DIR}/native-contract)
+  target_include_directories(ramulator PRIVATE integration)
+  set_target_properties(ramulator PROPERTIES
+    OUTPUT_NAME storagestacked_ramulator2
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
+  target_link_options(ramulator PRIVATE "LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/integration/online.map")
+  set_property(TARGET ramulator APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/integration/online.map")
+endif()
+
 if(RAMULATOR_PYTHON_BINDINGS)
   # Run codegen before building — generates C++ headers from DRAM DSL
   # and Python wrappers from C++ source. Only writes changed files.

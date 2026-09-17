@@ -60,6 +60,8 @@ class GenericDRAMSystem final : public IMemorySystem, public Implementation {
   void setup(IFrontEnd* frontend, IMemorySystem* memory_system) override {
   }
 
+  std::vector<IController*> integration_controllers() override { return m_controllers; }
+
   bool send(Request& req) override {
     // Validate request size: must be set and fit within one transaction.
     if (req.size_bytes <= 0 || req.size_bytes > m_tx_bytes) {

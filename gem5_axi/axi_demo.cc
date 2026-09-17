@@ -17,7 +17,7 @@ Demo::Demo(sc_module_name n, const gem5::AxiDemoParams& p)
       events(p.trace_dir + "/axi_events.csv"), directory(p.trace_dir) {
     if (!events) throw std::runtime_error("cannot open AXI trace");
     master.clk(clock); master.resetn(resetn); master.axi.bind(wires);
-    if (p.memory_backend != "memsim" && p.size > UINT32_MAX)
+    if (p.memory_backend != "memsim" && p.memory_backend != "ramulator2" && p.size > UINT32_MAX)
         throw std::invalid_argument("test RAM size exceeds 32-bit limit");
     if (p.backend == "aou") {
         if (p.outstanding > 1023) throw std::runtime_error("AoU supports at most 1023 live IDs");

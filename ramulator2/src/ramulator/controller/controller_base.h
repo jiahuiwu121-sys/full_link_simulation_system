@@ -40,6 +40,11 @@ class ControllerBase : public IController, public Implementation {
   bool get_power_stats(PowerStats& stats) override;
   void finalize_power() override;
 
+  // Embedding observer runs only after an actual issue; it cannot select commands.
+  std::function<void(const Request&, const ControllerBase&)> issue_observer;
+  bool has_pending_demand() const;
+  int get_period_ps() const { return m_tCK_ps; }
+
   bool send(Request& req) override;
   bool priority_send(Request& req) override;
 

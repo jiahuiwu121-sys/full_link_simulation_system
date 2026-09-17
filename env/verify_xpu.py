@@ -10,6 +10,9 @@ from hettrace.reader import CHAN_AR,CHAN_AW,CHAN_B,CHAN_R,CHAN_W,read_records
 from hettrace.validate import validate_dir,format_report
 
 root=Path(sys.argv[1])
+backend=json.loads((root/'environment/manifest.json').read_text()).get('memory_backend','memsim')
+backend_checks=('ramulator_check','ramulator_native_summary') if backend=='ramulator2' else ('memsim_check','memsim_core')
+backend_info='ramulator_native_summary' if backend=='ramulator2' else 'memsim_config'
 def read(path):return json.loads(path.read_text())
 def rows(path):
     with path.open() as f:return list(csv.DictReader(f))
@@ -22,7 +25,7 @@ for name,sources in [('npu',{'host','coralnpu'}),('gpu',{'host','vortex'}),
     if name=='gpu':assert 'PASSED!' in log
     else:assert '全部通过' in log
     if name.startswith('three'):assert 'NPU ok (tag=0x600d sum=0x17e0)' in log and 'Vortex ok' in log
-    checks={key:read(p/(key+'.json')) for key in ('check_summary','aou_check_summary','memsim_check','memsim_core')}
+    checks={key:read(p/(key+'.json')) for key in ('check_summary','aou_check_summary')+backend_checks}
     assert all(c['passed'] for c in checks.values())
     issues,summaries=validate_dir(str(p/'hettrace'),ticks_per_second=10**15)
     (p/'hettrace/validation.txt').write_text(format_report(issues,summaries)+'\n')
@@ -60,7 +63,7 @@ for name,sources in [('npu',{'host','coralnpu'}),('gpu',{'host','vortex'}),
     cases[name]={'exit_tick_fs':finish(p),'sources':observed,'devices':device,**checks}
 
 fast,slow=cases['three'],cases['three_slow']
-assert read(root/'three_slow/memsim_config.json')['period_fs']==4*read(root/'three/memsim_config.json')['period_fs']
+assert read(root/'three_slow'/(backend_info+'.json'))['period_fs']==4*read(root/'three'/(backend_info+'.json'))['period_fs']
 assert npu_sequences['three']==npu_sequences['three_slow']
 assert slow['exit_tick_fs']>fast['exit_tick_fs']
 assert slow['devices']['npu_cycles']>fast['devices']['npu_cycles']
@@ -73,16 +76,18 @@ feedback={'passed':True,'scale':4,'host_finish_delta_ns':(slow['exit_tick_fs']-f
     'gpu_cycles':[fast['devices']['gpu_cycles'],slow['devices']['gpu_cycles']],
     'note':'CPU/CP polling counts may change; compare the same computation and actual source responses.'}
 wave=read(root/'wave_audit/summary.json');assert len(wave)==4 and all(v['passed'] for v in wave.values())
-api=read(root/'api/api_check.json');assert api['passed'] and api['high_address_no_alias'] and api['sparse_zero_initialized']
-native_count=passed_count(root)
+api=read(root/'api/api_check.json');assert api['passed'] and api['high_address_no_alias']
+if backend=='ramulator2':assert api['power_transparent'] and api['fully_drained']
+else:assert api['sparse_zero_initialized']
+native_count=passed_count(root,backend)
 assert read(root/'environment/xpu_manifest.json')['passed']
-result={'passed':True,'scope':'CPU-hosted Vortex SimX and CoralNPU RTL -> AXI/UCIe -> online mem_sim -> original response path',
+result={'passed':True,'scope':'CPU-hosted Vortex SimX and CoralNPU RTL -> AXI/UCIe -> online '+backend+' -> original response path',
     'axi_data_bits':read(root/'three/protocol_summary.json').get('axi_data_bits',64),
     'cases':cases,'memory_feedback':feedback,'api_check':api,'native_tests_passed':native_count,
     'limitations':['Host program/stack use gem5 local memory; target buffers use the online link',
       'No general AoU functional/atomic access, checkpoints or cache-coherence support',
       'NPU local ELF/reset initialization precedes timed execution; one launch per simulation',
-      'HBM4 provisional behavioral PHY; GPU SimX is not full GPU RTL',
+      'HBM4 provisional model and estimated power; GPU SimX is not full GPU RTL',
       'CPU orchestrates separate GPU and NPU buffers; no direct GPU-NPU shared-buffer workload']}
 (root/'summary.json').write_text(json.dumps(result,indent=2)+'\n')
 print(json.dumps({'passed':True,'cases':list(cases),'memory_feedback':feedback},indent=2))

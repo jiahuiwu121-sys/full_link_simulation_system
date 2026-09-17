@@ -6,14 +6,21 @@ project=$(dirname "$self")
 : "${VORTEX_HOME:?请设置 VORTEX_HOME}"
 patch_file="$self/patches/simx_online.patch"
 if [[ ${1:-} == --revert ]]; then
-    if patch -R -p1 -s -f --dry-run -d "$VORTEX_HOME" -i "$patch_file" >/dev/null 2>&1; then
-        patch -R -p1 -s -d "$VORTEX_HOME" -i "$patch_file"
-    fi
+    for revert_patch in "$patch_file" "$self/patches/runtime_assert_header.patch"; do
+        if patch -R -p1 -s -f --dry-run -d "$VORTEX_HOME" -i "$revert_patch" >/dev/null 2>&1; then
+            patch -R -p1 -s -d "$VORTEX_HOME" -i "$revert_patch"
+        fi
+    done
     exit 0
 fi
 if ! patch -R -p1 -s -f --dry-run -d "$VORTEX_HOME" -i "$patch_file" >/dev/null 2>&1; then
     patch -p1 -s -f --dry-run -d "$VORTEX_HOME" -i "$patch_file"
     patch -p1 -s -d "$VORTEX_HOME" -i "$patch_file"
+fi
+runtime_patch="$self/patches/runtime_assert_header.patch"
+if ! patch -R -p1 -s -f --dry-run -d "$VORTEX_HOME" -i "$runtime_patch" >/dev/null 2>&1; then
+    patch -p1 -s -f --dry-run -d "$VORTEX_HOME" -i "$runtime_patch"
+    patch -p1 -s -d "$VORTEX_HOME" -i "$runtime_patch"
 fi
 mkdir -p "$VORTEX_HOME/sim/simx/hettrace"
 install -m 0644 "$project"/libhettrace/include/hettrace/*.h "$VORTEX_HOME/sim/simx/hettrace/"

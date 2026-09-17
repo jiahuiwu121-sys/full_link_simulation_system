@@ -18,7 +18,7 @@ git commit -m "说明本次行为变化的中文提交信息"
 
 gem5、CoralNPU 的本地快照已展开为主仓库源码，导入来源与版本核实边界见
 [内置源码说明](source-layout.md)及env/vendored_sources.json。必要基础适配直接维护源码，
-构建不重复打补丁。mem_sim已由此前提交移除，历史内存导入记录继续保留供追溯。
+构建不重复打补丁。mem_sim已由此前提交移除，历史内存导入记录继续保留供追溯。当前默认在线后端为 Ramulator2，接入契约见[在线后端说明](ramulator-integration.md)。
 
 ## 迁移历史
 
@@ -51,6 +51,7 @@ archive/*分支是原维护机器上的辅助历史入口，不要求新克隆�
 - gem5设备封装在gem5_new/gem5int/src/dev；每次env/build.sh自动刷新gem5中的构建副本。
 - Vortex SimX/ABI的上游差异归并为gem5_new/vortexint/patches/simx_online.patch。
 - gem5/CoralNPU基础适配已纳入主仓库源码；安装入口只刷新设备和库构建副本，不重复打补丁。
+- Ramulator2在线C ABI在ramulator2/integration；桥接和唯一backing在gem5_axi。原生库仅导出ssr_*，避免与Vortex内部Ramulator冲突。
 - env/record.py输出的*.patch是运行时差异快照，不是构建时对内部目录应用的补丁。
 
 迁移备份在本地integrate_doc/repository_migration_20260911，包括原Git bundle、

@@ -38,7 +38,11 @@ linked = command("ldd", str(binary))
 if "not found" in linked or "libsystemc" in linked.lower():
     raise SystemExit("Unexpected/missing runtime library:\n" + linked)
 sources = {}
-for name in ["gem5", "gem5_new", "gem5_axi", "axi2flit", "ucie-model", "mem_sim", "protocol", "coralnpu", "vortex-gpu/vortex"]:
+backend = os.environ.get('SS_MEMORY_BACKEND', 'ramulator2')
+source_names = ["gem5", "gem5_new", "gem5_axi", "axi2flit", "ucie-model", "protocol", "ramulator2"]
+if backend == 'memsim': source_names.append('mem_sim')
+if os.environ.get('SS_RUN_XPU') == '1': source_names += ['coralnpu','vortex-gpu/vortex']
+for name in source_names:
     repo = root / name
     head = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "HEAD"],
                           capture_output=True, text=True)
@@ -58,12 +62,27 @@ manifest = {
     "python": sys.version, "compiler": command(os.environ["AXI_CXX"], "--version"),
     "scons": command(str(prefix / "bin/scons"), "--version"),
     "packages": [{k: p[k] for k in ("name", "version", "build", "url", "md5")} for p in packages],
-    "memsim_library_sha256": sha(Path(os.environ["MEMSIM_BUILD"]) / "libstoragestacked_memsim.so"),
+    "memory_backend": backend,
+    "ramulator_library_sha256": sha(root / 'build/ramulator2/lib/libstoragestacked_ramulator2.so'),
     "binary": str(binary), "binary_sha256": sha(binary), "ldd": linked,
     "gem5_build_config": (root / "gem5/build/AXI/gem5.build/config").read_text(),
     "systemc": "gem5 native; no external libsystemc", "ticks_per_second": 10**15,
     "sources": sources,
     "environment_files_sha256": {p.name: sha(p) for p in sorted((root / "env").iterdir()) if p.is_file()},
 }
+native_library = root / 'build/ramulator2/lib/libstoragestacked_ramulator2.so'
+native_linked = command('ldd', str(native_library))
+if 'not found' in native_linked or 'libsystemc' in native_linked.lower():
+    raise SystemExit('Unexpected native Ramulator runtime: ' + native_linked)
+symbols = command('nm','-a','-C',str(native_library))
+if any(token in symbols for token in ('sc_core::','sc_dt::','sc_main')):
+    raise SystemExit('Ramulator library contains a second SystemC implementation')
+exports = [line.split()[-1] for line in command('nm','-D','--defined-only',str(native_library)).splitlines()]
+if not exports or any(not name.startswith('ssr_') for name in exports):
+    raise SystemExit('Online Ramulator library exposes conflicting C++ symbols: '+str(exports[:20]))
+manifest['ramulator_runtime'] = {'ldd':native_linked,'embedded_systemc_symbols':0,'exports':exports}
+manifest['ramulator_build_cache'] = (root/'build/ramulator2/CMakeCache.txt').read_text()
+if backend == 'memsim':
+    manifest['memsim_library_sha256'] = sha(Path(os.environ['MEMSIM_BUILD'])/'libstoragestacked_memsim.so')
 (destination / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 print("Recorded:", destination / "manifest.json")

@@ -1,3 +1,30 @@
+# 统一构建与运行入口
+
+默认在线后端是 Ramulator2 + 唯一真实数据 backing + DRAMPower，详见[在线接入说明](../docs/ramulator-integration.md)。
+
+```bash
+bash env/bootstrap.sh
+bash env/build.sh
+bash env/run_ramulator.sh results/acceptance-ramulator2
+```
+
+三源包含 CPU 基础构建：
+
+```bash
+git submodule update --init --recursive vortex-gpu/vortex
+bash env/bootstrap_xpu.sh
+bash env/build_xpu.sh
+bash env/run_xpu.sh results/acceptance-xpu-ramulator2
+```
+
+GCC/Python/构建工具使用 conda explicit lock；原生 DRAM 依赖使用 ramulator-artifacts.lock.json 的源码 SHA256。SS_MEMORY_BACKEND 默认 ramulator2，可显式选择需要匹配源码的历史 memsim。env/run.sh 继续验证 RAM/simple 兼容链路。
+
+新运行使用独立目录，验收关闭 GDB listener。HTML 通过本机 HTTP 服务查看，交接复制整个用例目录。当前模型范围、时间/数据/功耗契约和参数见上述在线说明。
+
+下面保留原 memsim 交接环境说明供历史追溯，原验收数和 memsim 路径不表示当前 Ramulator2 验收结果。
+
+---
+
 # 统一构建与运行环境
 
 首次配置和依赖包使用请先看[配置与交接指引](../docs/setup.md)。

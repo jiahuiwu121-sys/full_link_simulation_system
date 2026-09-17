@@ -11,6 +11,8 @@
 
 namespace Ramulator {
 
+class IController;
+
 class IMemorySystem : public TopLevel<IMemorySystem> {
   RAMULATOR_REGISTER_INTERFACE(IMemorySystem, "memory_system")
 
@@ -53,6 +55,7 @@ class IMemorySystem : public TopLevel<IMemorySystem> {
   void print_stats(std::ostream& os) { m_impl->print_stats(os); }
   ConfigNode collect_stats() const { return m_impl->collect_stats(); }
 
+  virtual std::vector<IController*> integration_controllers() { return {}; }
   virtual bool send(Request& req) = 0;
   virtual void tick() = 0;
 

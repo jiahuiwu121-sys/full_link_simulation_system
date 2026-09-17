@@ -4,6 +4,7 @@ import importlib.util
 import os
 from pathlib import Path
 import shlex
+import sys
 from types import SimpleNamespace
 import m5
 from m5.objects import (AddrRange,AxiDemo,Root,SEWorkload,Process,System,SystemXBar,
@@ -12,7 +13,10 @@ from m5.objects import (AddrRange,AxiDemo,Root,SEWorkload,Process,System,SystemX
 root_path=Path(__file__).resolve().parents[2]
 spec=importlib.util.spec_from_file_location('het_frontends',root_path/'gem5_new/gem5int/configs/het/het_system.py')
 front=importlib.util.module_from_spec(spec);spec.loader.exec_module(front)
+sys.path.insert(0, str(root_path/'env'))
+from generate_ramulator_config import add_options, runtime_config
 p=argparse.ArgumentParser()
+add_options(p)
 p.add_argument('--cmd',required=True)
 p.add_argument('--options',default='')
 p.add_argument('--vortex-library',default='')
@@ -48,7 +52,10 @@ ranges=[AddrRange(front.SHARED_BUFFER[0],size=front.SHARED_BUFFER[1]),
         AddrRange(front.NPU_WORK[0],size=front.NPU_WORK[1])]
 if a.vortex_library:ranges.append(AddrRange(front.VORTEX_BAR[0],size=front.VORTEX_BAR[1]))
 size=0x170000000 if a.vortex_library else 0x30000000
-system.axi=AxiDemo(backend='aou',memory_backend='memsim',base=0x90000000,size=size,
+system.axi=AxiDemo(backend='aou',memory_backend=a.memory_backend,base=0x90000000,size=size,
+    ramulator_config=runtime_config(a,out,8 if a.vortex_library else 2),
+    ramulator_slots=a.ramulator_slots,ramulator_children=a.ramulator_children,
+    ramulator_response_hold=a.ramulator_response_hold,
     memsim_channels=8 if a.vortex_library else 2,memsim_scale=a.memsim_scale,
     memsim_queue=4,memsim_slots=8,outstanding=16,planes=2,stalls=True,replay=a.replay,
     trace_dir=str(out))

@@ -1,6 +1,7 @@
 #ifndef RAMULATOR_BASE_REQUEST_H
 #define RAMULATOR_BASE_REQUEST_H
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <utility>
@@ -11,6 +12,7 @@
 namespace Ramulator {
 
 struct Request {
+  uint64_t integration_token = 0;  // Zero identifies native maintenance requests.
   Addr_t addr = -1;
   Addr_t intra_channel_addr = -1;  // Flat address with channel bits stripped
   AddrVec_t addr_vec{};

@@ -1,6 +1,10 @@
 """Bundled gem5 -> nonblocking TLM -> AXI signals -> independent AXI RAM."""
 import argparse
 import os
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "env"))
+from generate_ramulator_config import add_options, runtime_config
 import m5
 from m5.objects import (
     System, SrcClockDomain, VoltageDomain, SimpleMemory, AddrRange, SystemXBar,
@@ -14,7 +18,7 @@ parser.add_argument("--binary")
 parser.add_argument("--het-trace", action="store_true",
                     help="Observe target packets using gem5_new HetAxiMonitor")
 parser.add_argument("--backend", choices=["ram", "aou"], default="ram")
-parser.add_argument("--memory-backend", choices=["simple", "memsim"], default="simple")
+add_options(parser, default_backend="simple")
 parser.add_argument("--memsim-channels", type=int, default=2)
 parser.add_argument("--memsim-scale", type=int, default=1)
 parser.add_argument("--memsim-queue", type=int, default=4)
@@ -29,8 +33,8 @@ parser.add_argument("--no-stalls", action="store_true")
 parser.add_argument("--response-hold", default="7ns")
 parser.add_argument("--max-ticks", type=int, default=10**13)
 args = parser.parse_args()
-if args.memory_backend == "memsim" and args.backend != "aou":
-    parser.error("memsim requires --backend aou")
+if args.memory_backend in ("memsim", "ramulator2") and args.backend != "aou":
+    parser.error("online memory requires --backend aou")
 if min(args.memsim_channels, args.memsim_scale, args.memsim_queue, args.memsim_slots) < 1 or args.memsim_response_hold < 0:
     parser.error("invalid memsim capacities/clock scale")
 if args.mode == "cpu" and not args.binary:
@@ -51,7 +55,10 @@ system.host_mem = SimpleMemory(range=host_range, latency="10ns")
 system.axi = AxiDemo(
     base=base, size=8192, period=args.period, outstanding=args.slots,
     backend=args.backend, planes=args.planes, replay=args.replay,
-    memory_backend=args.memory_backend, memsim_channels=args.memsim_channels,
+    memory_backend=args.memory_backend,
+    ramulator_config=runtime_config(args, out), ramulator_slots=args.ramulator_slots,
+    ramulator_children=args.ramulator_children, ramulator_response_hold=args.ramulator_response_hold,
+    memsim_channels=args.memsim_channels,
     memsim_scale=args.memsim_scale, memsim_queue=args.memsim_queue,
     memsim_slots=args.memsim_slots, memsim_response_hold=args.memsim_response_hold,
     latency=args.latency, stalls=not args.no_stalls, trace_dir=out,

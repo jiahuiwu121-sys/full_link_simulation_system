@@ -1,3 +1,5 @@
+> 当前在线后端默认 Ramulator2，构建/运行、参数与验收以[在线后端说明](ramulator-integration.md)为准。本文中的 memsim 结果路径和验收数字属于历史记录。
+
 # 配置、交接与完整运行
 
 本工程把CPU、Vortex GPU、CoralNPU的访存接入同一个AXI256/UCIe/在线mem_sim响应闭环。
@@ -21,7 +23,7 @@ Ubuntu可先由管理员安装：
 ```bash
 sudo apt-get update
 sudo apt-get install -y build-essential git python3 curl ca-certificates \
-  tar gzip bzip2 unzip patch pkg-config autoconf automake libtool flex bison perl rsync
+  tar gzip bzip2 unzip patch pkg-config autoconf automake libtool m4 flex bison perl rsync
 ```
 
 编译器、Python、SCons、CMake、Bazel、交叉工具链由下面的锁定环境准备。

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/activate.sh"
-"$AXI_PYTHON" "$SS_ROOT/env/check_sources.py"
+"$AXI_PYTHON" "$SS_ROOT/env/check_sources.py" --xpu
 bash "$HET_PROJECT_ROOT/vortexint/install.sh"
 bash "$HET_PROJECT_ROOT/coralnpuint/install.sh"
 mkdir -p "$VORTEX_BUILD"
@@ -25,10 +25,10 @@ make -C "$VORTEX_HOME/third_party" CC="$AXI_CC" CXX="$AXI_CXX" COMPILE_C="$softf
 # pinned include paths first, including when an old ext/ checkout still exists.
 vortex_flags="-I$SS_DEPS_ROOT/cmake-sources/spdlog/include -I$SS_DEPS_ROOT/cmake-sources/yaml-cpp/include ${CXXFLAGS:-}"
 env -u DEBUG CXXFLAGS="$vortex_flags" make -C sim/simx USE_GEM5=1 libvortex-gem5 -j4
-make -C sw/runtime/stub -j4
-make -C sw/runtime/gem5 HOST_ARCH=x86_64 -j4
+make -B -C sw/runtime/stub CC="$AXI_CC" CXX="$AXI_CXX" -j4
+make -B -C sw/runtime/gem5 HOST_ARCH=x86_64 CC="$AXI_CC" CXX="$AXI_CXX" -j4
 # Host optimization flags cannot be passed to the RISC-V compiler.
-env -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS make -C tests/regression/vecadd -j4
+env -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS make -C tests/regression/vecadd CC="$AXI_CC" CXX="$AXI_CXX" -j4
 make -C "$HET_PROJECT_ROOT/workloads/three_source"
 make -C "$HET_PROJECT_ROOT/workloads/shared_buffer" CC="$AXI_CC"
 cd "$CORALNPU_HOME"

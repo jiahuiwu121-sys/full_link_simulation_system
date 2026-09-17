@@ -1,0 +1,32 @@
+{
+  "date": "2026-09-17",
+  "base_commit": "8ffc1a1c9c456c9c5e2e58bc5c9cadc8f76cc083",
+  "scope": "git index entries before adding this code-reading report; no ignored build/results directories or uninitialized submodule contents",
+  "total_entries": 12899,
+  "kind_counts": {
+    "config": 815,
+    "documentation": 309,
+    "build": 347,
+    "source": 9669,
+    "text/data": 1709,
+    "binary/data": 49,
+    "submodule": 1
+  },
+  "module_counts": {
+    "(root)": 4,
+    "axi2flit": 43,
+    "coralnpu": 1087,
+    "docs": 4,
+    "env": 30,
+    "gem5": 10945,
+    "gem5_axi": 50,
+    "gem5_new": 106,
+    "protocol": 1,
+    "ramulator2": 608,
+    "ucie-model": 20,
+    "vortex-gpu": 1
+  },
+  "total_text_lines": 3088161,
+  "source_lines": 2183718,
+  "extraction": "regex candidates; max 80 symbols and 80 direct dependencies per file; line hints may point to preceding whitespace; not an AST, exhaustive symbol list or exact call graph"
+}

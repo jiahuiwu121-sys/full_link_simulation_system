@@ -29,4 +29,5 @@ else
     "$ss_mamba" --no-rc create -y --root-prefix "$ss_deps/mamba" \
         --prefix "$ss_deps/toolchain" --file "$ss_root/env/conda-linux-64.lock" "${offline_args[@]}"
 fi
+SS_DEPS_ROOT="$ss_deps" "$ss_deps/toolchain/bin/python" "$ss_root/env/prepare_ramulator_sources.py"
 echo "工具环境已准备好。下一步：bash $ss_root/env/build.sh"

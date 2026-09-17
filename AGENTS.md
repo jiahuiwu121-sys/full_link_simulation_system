@@ -9,12 +9,13 @@
 - 只有 vortex-gpu/vortex 及其递归依赖是外部子模块，按 env/sources.lock.json 固定版本。
   外部必要改动在系统内保存补丁；不要擅自更新其上游版本或 reset 本地适配。
   gem5、coralnpu 的导入来源见 env/vendored_sources.json，必要适配已纳入源码，构建不再应用基础补丁。
-  mem_sim 已由先前提交移除；在线链路构建/运行仍需要补齐匹配源码，不用 ramulator2 自动替代。
-- CPU/GPU/NPU → gem5原生TLM → AXI256 → AXI2Flit → UCIe → 在线mem_sim，沿原链路返回。
+  mem_sim 已由先前提交移除；按用户授权使用显式 ramulator2 在线后端。历史 memsim 分支需要匹配源码，不静默回退。
+- CPU/GPU/NPU → gem5原生TLM → AXI256 → AXI2Flit → UCIe → AouTarget → RamulatorBackend，沿原链路返回。
+  backing保存唯一真实数据；Ramulator2实际命令驱动数据服务及DRAMPower，写callback不直接表示数据完成。
   WDATA/RDATA=256bit，WSTRB=32bit，TLM Bridge64名称不表示AXI为64bit。
 - 单进程、gem5主事件队列、gem5原生SystemC、统一1fs；不得链接第二套SystemC。
-- 统一入口 env/bootstrap.sh、env/build.sh、env/run_memsim.sh；设备环境另见
-  env/bootstrap_xpu.sh、env/build_xpu.sh、env/run_xpu.sh。完整链路显式选择backend aou及memory-backend memsim。
+- 统一入口 env/bootstrap.sh、env/build.sh、env/run_ramulator.sh；设备环境另见
+  env/bootstrap_xpu.sh、env/build_xpu.sh、env/run_xpu.sh。完整链路显式选择backend aou及memory-backend ramulator2。配置见docs/ramulator-integration.md。
 - gem5设备源码统一维护于gem5_new/gem5int/src/dev，构建自动刷新gem5中的副本。
   共享AoU帧格式在protocol/include。Vortex补丁只改外部SimX和ABI内部。
 - 配置和依赖包说明见docs/setup.md，打包/恢复入口env/dependency_bundle.py。
