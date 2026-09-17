@@ -2,8 +2,10 @@
 
 首次配置和依赖包使用请先看[配置与交接指引](../docs/setup.md)。
 
-当前五个内部模块是主仓库普通源码，外部gem5/Vortex/CoralNPU仍按sources.lock.json锁定。
-构建不再对UCIe打补丁；GPU设备源码在gem5_new/gem5int/src/dev/vortex直接维护。
+gem5、CoralNPU已为主仓库普通源码，只有Vortex及其递归依赖按sources.lock.json锁定。
+来源记录见vendored_sources.json，当前布局与维护见[内置源码说明](../docs/source-layout.md)。
+mem_sim已由先前提交移除，以下在线构建/运行入口仍需补齐匹配源码。
+构建不再对UCIe、内置gem5/CoralNPU应用基础补丁；GPU设备源码在gem5_new/gem5int/src/dev/vortex直接维护。
 
 当前已验证的完整链路：
 
@@ -92,7 +94,7 @@ bash env/run_memsim.sh
 含统一的 glibc 2.28 sysroot、binutils 和 C/C++ 运行库。`environment.yml` 记录选版意图；
 交接使用 explicit lock，不重新求解。安装目录默认 `~/.local/share/storagestacked-unified/`。
 
-`build.sh` 检查 `sources.lock.json`，应用外部 gem5 补丁并安装系统内的设备源码，先以 C++20 构建
+`build.sh` 检查内部源码及 `sources.lock.json`，刷新系统内的设备构建副本，先以 C++20 构建
 `mem_sim/build-unified/libstoragestacked_memsim.so`，再通过 EXTRAS 构建
 `gem5/build/AXI/gem5.opt`，含 gem5_axi 和 gem5_new 的 HETTrace 观察器。
 两者使用同一套编译器和运行库；C ABI 隔开 gem5 C++17 与 mem_sim C++20。
@@ -164,12 +166,12 @@ CPU 旧 libc workload 的默认 watchdog 为 10ms；新的 freestanding workload
 
 ## 迁移与交接
 
-五个内部模块和必要的外部适配补丁由主仓库管理。新机器使用
-`git clone --recurse-submodules https://github.com/fmq03/StorageStacked.git`，
-再执行上述bootstrap/build；构建会将补丁和系统内设备源码安装到外部依赖。
+内部源码、gem5/CoralNPU和必要的Vortex外部适配补丁由主仓库管理。新机器使用
+`git clone --recurse-submodules https://github.com/jiahuiwu121-sys/full_link_simulation_system.git`，
+再按当前源码完整性执行bootstrap/build；内置gem5/CoralNPU只刷新设备构建副本，Vortex仍安装外部补丁。
 原维护机器上的results和integrate_doc不会出现在新克隆中，文档里的这些路径是本地历史证据。
 
-直接复制工作区时，保留根 `.git/modules`、三个外部子模块的 `.git` 文件及必要的
+直接复制工作区时，保留根 `.git/modules`、Vortex及递归依赖的 `.git` 文件及必要的
 未提交源码。运行结果与 integrate_doc 不随 clone 分发，需要时另行复制。
 禁止删除原 `/mnt/d/storagestacked`。
 

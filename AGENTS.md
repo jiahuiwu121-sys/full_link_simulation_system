@@ -4,10 +4,12 @@
 再读 README.md 和 docs/development.md。若交接资料未分发，以已提交文档为准。
 
 - 主仓库为https://github.com/jiahuiwu121-sys/full_link_simulation_system.git；提交说明用中文，push须有用户明确授权。
-- ucie-model、axi2flit、gem5_axi、mem_sim、gem5_new 是主仓库普通目录，直接维护源码。
+- ucie-model、axi2flit、gem5_axi、gem5_new、gem5、coralnpu、ramulator2 是主仓库普通目录，直接维护源码。
   不重新建立内部 .git、gitlink 或构建时向内部模块应用补丁。
-- gem5、coralnpu、vortex-gpu/vortex 是外部子模块，按 env/sources.lock.json 固定版本。
-  外部必要改动在系统内保存补丁；不要擅自更新它们的上游版本或 reset 本地适配。
+- 只有 vortex-gpu/vortex 及其递归依赖是外部子模块，按 env/sources.lock.json 固定版本。
+  外部必要改动在系统内保存补丁；不要擅自更新其上游版本或 reset 本地适配。
+  gem5、coralnpu 的导入来源见 env/vendored_sources.json，必要适配已纳入源码，构建不再应用基础补丁。
+  mem_sim 已由先前提交移除；在线链路构建/运行仍需要补齐匹配源码，不用 ramulator2 自动替代。
 - CPU/GPU/NPU → gem5原生TLM → AXI256 → AXI2Flit → UCIe → 在线mem_sim，沿原链路返回。
   WDATA/RDATA=256bit，WSTRB=32bit，TLM Bridge64名称不表示AXI为64bit。
 - 单进程、gem5主事件队列、gem5原生SystemC、统一1fs；不得链接第二套SystemC。

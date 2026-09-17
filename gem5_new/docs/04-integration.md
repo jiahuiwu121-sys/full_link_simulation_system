@@ -1,4 +1,5 @@
 > 统一系统入口以根目录env/和docs/development.md为准；下文部分独立安装步骤保留供参考。
+> gem5/CoralNPU现已内置为普通源码，基础适配不再构建时应用；当前说明见根目录docs/source-layout.md。
 
 # 上游源码集成
 

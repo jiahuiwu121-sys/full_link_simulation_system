@@ -1,9 +1,13 @@
 # 配置、交接与完整运行
 
 本工程把CPU、Vortex GPU、CoralNPU的访存接入同一个AXI256/UCIe/在线mem_sim响应闭环。
-五个内部模块已并入主仓库；只有gem5、coralnpu、vortex-gpu/vortex及Vortex递归依赖是子模块。
+gem5、coralnpu和其他内部模块均为主仓库普通源码；只有vortex-gpu/vortex及Vortex递归依赖是子模块。
 入口统一在根目录env/；protocol/是共享协议源码。
 源码和依赖安装路径建议使用不含空格的Linux路径。
+
+当前源码布局见[内置源码说明](source-layout.md)。gem5/CoralNPU无需递归下载，原生适配已纳入源码。
+mem_sim已在先前提交移除；下文在线构建/运行流程仍要求另外补齐匹配源码。
+旧交接包可复用工具缓存，安装跳过已经内置的gem5/CoralNPU子模块。
 
 ## 1. 主机条件
 
@@ -25,11 +29,11 @@ sudo apt-get install -y build-essential git python3 curl ca-certificates \
 
 ## 2. 没有依赖包：从Git与上游下载
 
-主仓库为https://github.com/fmq03/StorageStacked。建议用Git克隆，保留子模块版本信息；
+主仓库为https://github.com/jiahuiwu121-sys/full_link_simulation_system。建议用Git克隆，保留子模块版本信息；
 GitHub的源码ZIP不包含完整的上游子模块，不能直接代替下面的步骤。
 
 ```bash
-git clone --recurse-submodules https://github.com/fmq03/StorageStacked.git StorageStacked
+git clone --recurse-submodules https://github.com/jiahuiwu121-sys/full_link_simulation_system.git StorageStacked
 cd StorageStacked
 # 已clone但未初始化子模块时执行：
 git submodule sync --recursive
@@ -40,7 +44,7 @@ bash env/bootstrap_xpu.sh
 bash env/build_xpu.sh
 ```
 
-若新电脑已配置GitHub SSH密钥，可将克隆地址换成git@github.com:fmq03/StorageStacked.git。
+若新电脑已配置GitHub SSH密钥，可将克隆地址换成git@github.com:jiahuiwu121-sys/full_link_simulation_system.git。
 若仓库访问要求身份验证，使用有该仓库权限的GitHub账号。
 
 正确命令是`git submodule update --init --recursive`，它取主仓库记录的确切提交。
@@ -83,7 +87,7 @@ tar -xzf storagestacked-deps-20260911.tar.gz
 # 用解压后的真实绝对路径替换这里的路径。
 export SS_BUNDLE_DIR=/data/storagestacked-deps-20260911
 # 先取得当前主仓库；无需在线递归下载，下面的install会从包内恢复子模块。
-git clone https://github.com/fmq03/StorageStacked.git StorageStacked
+git clone https://github.com/jiahuiwu121-sys/full_link_simulation_system.git StorageStacked
 cd StorageStacked
 export SS_DEPS_ROOT="$HOME/.local/share/storagestacked-unified"
 python3 env/dependency_bundle.py install "$SS_BUNDLE_DIR" --deps-root "$SS_DEPS_ROOT"
@@ -164,7 +168,7 @@ python3 -m http.server 8000 --bind 127.0.0.1 --directory results
 
 ## 5. 环境一致性与维护
 
-- env/sources.lock.json固定三个外部源码版本；内部版本由主仓库提交决定。
+- env/sources.lock.json固定Vortex外部源码版本；内置gem5/CoralNPU及其他内部源码版本由主仓库提交决定。
 - env/conda-linux-64.lock固定宿主工具环境，xpu-runtime-linux-64.lock固定私有运行库。
 - env/xpu-artifacts.lock.json固定Bazel、LZ4、Vortex工具链及yaml-cpp/spdlog/argparse的URL与SHA256。
 - 每个结果的environment/manifest.json记录源码、工具版本与二进制哈希；设备运行还记录xpu_manifest.json。

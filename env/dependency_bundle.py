@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCKS = ('sources.lock.json', 'conda-linux-64.lock',
-         'xpu-runtime-linux-64.lock', 'xpu-artifacts.lock.json')
+         'xpu-runtime-linux-64.lock', 'xpu-artifacts.lock.json', 'vendored_sources.json')
 MAMBA_URL = 'https://micro.mamba.pm/api/micromamba/linux-64/2.3.3'
 MAMBA_SHA = 'e7274528ceb9c20d048a428d6c22d7e02e268f8ffb762c4c365422347c8b8ba2'
 
@@ -157,6 +157,18 @@ def verify(folder):
         raise RuntimeError('Package file inventory differs from manifest')
     for name, expected in manifest['locks'].items():
         if digest(ROOT / 'env' / name) != expected:
+            if name == 'sources.lock.json':
+                # 旧包继续提供工具缓存，已内置的源码不恢复为子模块。
+                old_lock = json.loads((folder / 'locks' / name).read_text())
+                current = json.loads((ROOT / 'env' / name).read_text())
+                vendors = json.loads((ROOT / 'env/vendored_sources.json').read_text())
+                removed = set(old_lock) - set(current)
+                if (digest(folder / 'locks' / name) == expected and
+                        removed and removed <= set(vendors) and
+                        all(old_lock[key] == vendors[key]['declared_upstream_revision']
+                            for key in removed) and
+                        {key: value for key, value in old_lock.items() if key not in removed} == current):
+                    continue
             raise RuntimeError('Package does not match this checkout: ' + name)
     for relative, item in manifest['files'].items():
         path = folder / relative
@@ -168,7 +180,11 @@ def verify(folder):
 
 def install(folder, deps):
     manifest = verify(folder)
+    vendors = json.loads((ROOT / 'env/vendored_sources.json').read_text())
     for item in manifest['submodules']:
+        if item['path'] in vendors:
+            print('保留主仓库源码，跳过旧包子模块：' + item['path'])
+            continue
         parent = ROOT / item['parent']
         target = ROOT / item['path']
         if not (target / '.git').exists():

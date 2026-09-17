@@ -23,6 +23,27 @@ SELF_DIR=$(dirname "$(readlink -f "$0")")
 PROJ_DIR=$(dirname "$SELF_DIR")
 CORALNPU_HOME=${CORALNPU_HOME:-$HOME/coralnpu}
 
+# 主仓库源码的 AXI/native C++ 适配已直接纳入；只刷新库的构建副本。
+LOCAL_CORALNPU=$(readlink -f "$PROJ_DIR/../coralnpu")
+if [ "$(readlink -f "$CORALNPU_HOME")" = "$LOCAL_CORALNPU" ]; then
+    if [ "${1:-}" = "--revert" ]; then
+        echo 'CoralNPU 已由主仓库管理；请通过主仓库审阅和还原源码修改。' >&2
+        exit 1
+    fi
+    if [ ! -f "$CORALNPU_HOME/hw_sim/core_mini_axi_wrapper.h" ]; then
+        echo '主仓库 CoralNPU 源码缺失。' >&2
+        exit 1
+    fi
+    mkdir -p "$CORALNPU_HOME/gem5int/hettrace"
+    install -m 0644 "$PROJ_DIR"/libhettrace/include/hettrace/*.h "$CORALNPU_HOME/gem5int/hettrace/"
+    for file in coralnpu_trace.h coralnpu_gem5.h coralnpu_gem5.cc ddr_touch.cc coralnpu_gem5.map; do
+        install -m 0644 "$SELF_DIR/$file" "$CORALNPU_HOME/gem5int/"
+    done
+    install -m 0644 "$SELF_DIR/BUILD.bazel" "$CORALNPU_HOME/gem5int/BUILD"
+    echo '已刷新主仓库 CoralNPU 设备库构建副本；无需应用源码补丁。'
+    exit 0
+fi
+
 REVERT=0
 if [ "${1:-}" = "--revert" ]; then REVERT=1; fi
 

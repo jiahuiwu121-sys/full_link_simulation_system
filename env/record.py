@@ -54,6 +54,7 @@ manifest = {
     "platform": platform.platform(), "machine": platform.machine(),
     "workspace": str(root), "workspace_revision": command("git", "-C", str(root), "rev-parse", "HEAD"),
     "internal_imports": json.loads((root / "env/internal_imports.json").read_text()), "toolchain_prefix": str(prefix),
+    "vendored_sources": json.loads((root / "env/vendored_sources.json").read_text()),
     "python": sys.version, "compiler": command(os.environ["AXI_CXX"], "--version"),
     "scons": command(str(prefix / "bin/scons"), "--version"),
     "packages": [{k: p[k] for k in ("name", "version", "build", "url", "md5")} for p in packages],

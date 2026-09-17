@@ -1,7 +1,7 @@
 # 开发与历史追溯
 
-五个内部模块作为同一系统维护，直接在主仓库创建功能分支，允许一个提交同时修改
-处理器适配、AXI、UCIe和内存接口。只有外部gem5、Vortex、CoralNPU保留子模块。
+内部模块以及gem5、CoralNPU、ramulator2作为同一系统维护，直接在主仓库创建功能分支，允许一个提交同时修改
+处理器适配、AXI、UCIe和内存接口。只有Vortex及其递归依赖保留子模块。
 
 ```bash
 git switch -c feature/功能名称
@@ -11,10 +11,14 @@ git commit -m "说明本次行为变化的中文提交信息"
 # 验证后在main合并；涉及完整功能的分支可以使用--no-ff保留合并记录
 ```
 
-不要对五个普通目录执行git pull；它们没有独立仓库。在根目录同步并合并主仓库分支，
+不要对普通源码目录执行git pull；它们没有独立仓库。在根目录同步并合并主仓库分支，
 主仓库地址为https://github.com/jiahuiwu121-sys/full_link_simulation_system.git（HTTPS地址见README）。
 更新主仓库后运行git submodule update --init --recursive，使外部依赖匹配主仓库记录。
 若子模块有自己的源码修改，先保存和核对这些修改，不要用reset清除本地适配。
+
+gem5、CoralNPU 的本地快照已展开为主仓库源码，导入来源与版本核实边界见
+[内置源码说明](source-layout.md)及env/vendored_sources.json。必要基础适配直接维护源码，
+构建不重复打补丁。mem_sim已由此前提交移除，历史内存导入记录继续保留供追溯。
 
 ## 迁移历史
 
@@ -44,9 +48,9 @@ archive/*分支是原维护机器上的辅助历史入口，不要求新克隆�
 
 - UCIe的AoU格式支持和观察接口直接在ucie-model源码中维护；不再由axi2flit/gem5_axi打补丁。
 - AoU公共帧映射在protocol/include，UCIe与AXI2Flit共同引用。
-- gem5设备封装在gem5_new/gem5int/src/dev；每次env/build.sh自动安装到外部gem5的构建副本。
+- gem5设备封装在gem5_new/gem5int/src/dev；每次env/build.sh自动刷新gem5中的构建副本。
 - Vortex SimX/ABI的上游差异归并为gem5_new/vortexint/patches/simx_online.patch。
-- CoralNPU必要的上游补丁包含异步访存及无第二套SystemC的Bazel规则，安装入口统一管理。
+- gem5/CoralNPU基础适配已纳入主仓库源码；安装入口只刷新设备和库构建副本，不重复打补丁。
 - env/record.py输出的*.patch是运行时差异快照，不是构建时对内部目录应用的补丁。
 
 迁移备份在本地integrate_doc/repository_migration_20260911，包括原Git bundle、

@@ -1,0 +1,22 @@
+{
+  "gem5": {
+    "kind": "monorepo",
+    "upstream_url": "https://github.com/gem5/gem5.git",
+    "declared_upstream_revision": "c8222cc67a399bfc01e8658dd14b30d5bfd634f9",
+    "revision_verified": false,
+    "imported_from": "gem5/gem5",
+    "original_entries": 10933,
+    "original_inventory_sha256": "36158990f633aec5eee7517d549a2a61b971b80d971265fc0c6328233c005407",
+    "note": "当前本地源码快照导入；原 .git 指向缺失元数据，不能核实快照上游提交。保留全部源码、许可证和测试输入；必要适配已纳入源码。"
+  },
+  "coralnpu": {
+    "kind": "monorepo",
+    "upstream_url": "https://github.com/google-coral/coralnpu.git",
+    "declared_upstream_revision": "fcb74cfe79dbd184b9c53539490994e701981f80",
+    "revision_verified": false,
+    "imported_from": "coralnpu/coralnpu",
+    "original_entries": 1077,
+    "original_inventory_sha256": "7b1d9cd30225ca38c894710b2c69757c313ee337ae4ce2dc451b9a3fae6231fb",
+    "note": "当前本地源码快照导入；原 .git 指向缺失元数据，不能核实快照上游提交。保留全部源码、许可证和测试输入；必要适配已纳入源码。"
+  }
+}

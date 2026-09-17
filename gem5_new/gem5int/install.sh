@@ -30,6 +30,19 @@ SELF_DIR=$(dirname "$(readlink -f "$0")")
 PROJ_DIR=$(dirname "$SELF_DIR")
 GEM5_HOME=${GEM5_HOME:-$HOME/gem5}
 
+# 主仓库 gem5 的基础适配随源码维护，不能用旧 --revert 删除项目代码。
+LOCAL_GEM5=$(readlink -f "$PROJ_DIR/../gem5")
+if [ "$(readlink -f "$GEM5_HOME")" = "$LOCAL_GEM5" ]; then
+    if [ "${1:-}" = "--revert" ]; then
+        echo 'gem5 已由主仓库管理；请通过主仓库审阅和还原源码修改。' >&2
+        exit 1
+    fi
+    bash "$SELF_DIR/install_devices.sh"
+    # 统一构建通过 EXTRAS 引入 monitor，避免在 src/ 下再复制一份重复编译。
+    echo '已刷新主仓库 gem5 设备构建副本；monitor/config 请使用 gem5_new 中的入口。'
+    exit 0
+fi
+
 REVERT=0
 if [ "${1:-}" = "--revert" ]; then REVERT=1; fi
 

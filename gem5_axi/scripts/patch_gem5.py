@@ -10,6 +10,14 @@ from pathlib import Path
 import sys
 
 source = Path(sys.argv[1]) / "src/systemc/tlm_bridge/gem5_to_tlm.cc"
+
+local_gem5 = Path(__file__).resolve().parents[2] / "gem5"
+if Path(sys.argv[1]).resolve() == local_gem5.resolve():
+    if ("packet->getConstPtr<unsigned char>()" not in source.read_text() or
+            "str.resize(w);" not in (local_gem5 / "src/systemc/utils/vcd.cc").read_text()):
+        raise RuntimeError("主仓库 gem5 缺少兼容适配；请直接审阅源码，不在构建时打补丁")
+    print("主仓库 gem5 兼容适配已纳入源码，无需打补丁")
+    raise SystemExit(0)
 old = "    unsigned char *data = packet->getPtr<unsigned char>();"
 new = """    // TLM requires a mutable pointer, but write data is input-only.
     // Permit masked writes; integration conversion hooks must preserve enables.

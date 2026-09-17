@@ -56,6 +56,12 @@ def revision(path):
 
 def check(name, path):
     pin = LOCK[name]
+    workspace = ROOT.parent.resolve()
+    if name in ("gem5", "coralnpu") and path.resolve() == workspace / name:
+        # 内部源码版本由主仓库提交标识；上游 revision 仅保留作导入来源。
+        subprocess.run([sys.executable, str(workspace / "env/check_sources.py"),
+                        "--only", name], check=True)
+        return
     if name == "memsim" and (path / RECEIPT).is_file():
         receipt = json.loads((path / RECEIPT).read_text())
         if (receipt.get("revision") != pin["revision"] or
@@ -125,6 +131,11 @@ def import_memsim(archive, destination):
 
 
 def fetch(name, destination, args):
+    if name in ("gem5", "coralnpu") and destination.resolve() == ROOT.parent.resolve() / name:
+        if not destination.is_dir():
+            raise ValueError("主仓库源码缺失，请从主仓库恢复 %s，不创建内部 Git 仓库" % name)
+        check(name, destination)
+        return
     if destination.exists():
         check(name, destination)
         return
