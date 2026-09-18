@@ -46,6 +46,8 @@
 #include <cstdio>
 #include <cstring>
 #include <vector>
+#include <cstdlib>
+#include "../../../gem5_axi/workloads/metrics_marker.h"
 
 // ---- addrmap.json: regions.shared_buffer ----------------------------------
 // 与 coralnpuint/ddr_touch.cc 的 kIn/kOut 必须一致。
@@ -108,6 +110,8 @@ struct kernel_arg_t {
     } while (0)
 
 int main(int argc, char** argv) {
+    const bool metrics = std::getenv("SS_METRICS_MARKERS") != nullptr;
+    if (metrics) ss_metrics_mark(1);
     const char* kernel_file = nullptr;
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "-k") == 0 && i + 1 < argc) {
@@ -294,5 +298,6 @@ int main(int argc, char** argv) {
     vx_device_release(dev);
 
     std::printf("host: 全部通过 —— 两个设备各自与 host 共享了字节\n");
+    if (metrics) ss_metrics_mark(2);
     return 0;
 }

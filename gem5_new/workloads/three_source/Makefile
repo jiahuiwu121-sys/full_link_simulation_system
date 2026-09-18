@@ -31,7 +31,7 @@ LIBS     := -L$(RT_DIR) -lvortex -Wl,-rpath,$(RT_DIR)
 
 all: $(BUILD)/host_main
 
-$(BUILD)/host_main: host_main.cpp | $(BUILD) check-rt
+$(BUILD)/host_main: host_main.cpp ../../../gem5_axi/workloads/metrics_marker.h | $(BUILD) check-rt
 	$(CXX) $(CXXFLAGS) $(INCS) -o $@ $< $(LIBS)
 
 # 缺 host runtime 时报一句能照着做的话，而不是让编译器抛 "cannot find -lvortex"

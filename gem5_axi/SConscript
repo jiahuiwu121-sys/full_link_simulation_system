@@ -1,6 +1,7 @@
 Import('*')
 env.Append(CPPPATH=[Dir('#/src/systemc/ext')])
-SimObject('Gem5Axi.py', sim_objects=['AxiDemo', 'AxiPacketTester'])
+SimObject('Gem5Axi.py', sim_objects=['AxiDemo', 'AxiPacketTester', 'MetricsMarker'])
+Source('metrics_marker.cc')
 Source('axi_master.cc')
 Source('axi_ram.cc')
 Source('axi_demo.cc')

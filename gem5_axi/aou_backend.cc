@@ -64,6 +64,12 @@ struct AouBackend::Fabric : sc_module {
     uint64_t tx_count = 0, rx_count = 0;
     std::ofstream log, flit_log, soc_log, mem_log;
     uint64_t observation = 0;
+    uint64_t metrics_cycles = 0;
+    struct Depth { uint64_t sum = 0, peak = 0, full = 0; };
+    std::array<Depth, 6> fifo_metrics{};
+    std::array<std::array<Depth, 5>, MAX_RESOURCE_PLANES> rp_queues{};
+    std::array<std::array<uint64_t, 3>, MAX_RESOURCE_PLANES> credit_stalls{};
+    std::array<std::array<uint64_t, 3>, MAX_RESOURCE_PLANES> credit_sums{};
     std::map<std::pair<std::string,uint64_t>,unsigned> sends, receives;
     sc_signal<sc_biguint<256>> wide_wdata, wide_rdata;
     sc_signal<sc_uint<32>> wide_strb;
@@ -216,6 +222,26 @@ struct AouBackend::Fabric : sc_module {
     }
     void tick() {
         sc_assert(sc_time_stamp().value() == gem5::curTick());
+        // Passive pre-handshake samples on the existing AXI clock.
+        ++metrics_cycles;
+        const unsigned depths[] = {unsigned(soc_tx.num_available()), unsigned(soc_rx.num_available()),
+            unsigned(mem_tx.num_available()), unsigned(mem_rx.num_available()),
+            unsigned(requests.num_available()), unsigned(responses.num_available())};
+        const unsigned capacities[] = {8, 8, 8, 8, 4, 4};
+        for (unsigned i = 0; i < 6; ++i) {
+            auto& q = fifo_metrics[i]; q.sum += depths[i]; q.peak = std::max<uint64_t>(q.peak, depths[i]);
+            q.full += depths[i] == capacities[i];
+        }
+        for (unsigned rp = 0; rp < planes; ++rp) {
+            const auto depths = bridge.queue_depths(rp);
+            for (unsigned k = 0; k < 5; ++k) {
+                auto& q = rp_queues[rp][k]; q.sum += depths[k]; q.peak = std::max<uint64_t>(q.peak, depths[k]);
+            }
+            for (unsigned k = 0; k < 3; ++k) {
+                credit_stalls[rp][k] += bridge.credit_blocked(rp, k);
+                credit_sums[rp][k] += bridge.available_credits()[rp][k];
+            }
+        }
         if (!owner.resetn.read()) { writes.clear(); reads.clear(); changed.notify(SC_ZERO_TIME); return; }
         if (av && ar) {
             const auto& x=aw.read(); sc_assert(x.id && x.id <= 1023);
@@ -310,5 +336,47 @@ void AouBackend::finish(const std::string& dir) {
       << ",\"reverse_replays\":" << s.stats.reverse.tx_replay_flits
       << ",\"crc_errors\":" << s.stats.forward.crc_fail_count+s.stats.reverse.crc_fail_count
       << ",\"order_violations\":" << s.bridge.order_violations() << "}\n";
+    std::ofstream m(dir + "/fabric_metrics.json");
+    m << "{\"cycles\":" << s.metrics_cycles << ",\"includes_reset\":true,\"fifo_queues\":{";
+    const char* fifo_names[] = {"soc_tx", "soc_rx", "mem_tx", "mem_rx", "target_requests", "target_responses"};
+    for (unsigned i = 0; i < 6; ++i) {
+        if (i) m << ',';
+        const auto& q = s.fifo_metrics[i];
+        m << '"' << fifo_names[i] << "\":{\"depth_cycle_sum\":" << q.sum
+          << ",\"peak\":" << q.peak << ",\"full_cycles\":" << q.full << '}';
+    }
+    m << "},\"axi2flit\":{\"packed_flits\":" << s.bridge.packed_flits()
+      << ",\"packed_granules\":" << s.bridge.packed_granules() << ",\"resource_planes\":[";
+    const char* kinds[] = {"write_req", "read_req", "write_data", "read_data", "write_resp"};
+    for (unsigned rp = 0; rp < s.planes; ++rp) {
+        if (rp) m << ',';
+        m << "{\"rp\":" << rp << ",\"queues\":{";
+        for (unsigned k = 0; k < 5; ++k) {
+            if (k) m << ',';
+            const auto& q = s.rp_queues[rp][k];
+            m << '"' << kinds[k] << "\":{\"depth_cycle_sum\":" << q.sum << ",\"peak\":" << q.peak;
+            if (k < 3) m << ",\"credit_blocked_cycles\":" << s.credit_stalls[rp][k]
+                         << ",\"available_credit_cycle_sum\":" << s.credit_sums[rp][k];
+            m << '}';
+        }
+        m << "}}";
+    }
+    m << "]},\"ucie\":{";
+    bool first = true;
+    for (const auto& item : {std::make_pair("forward", &s.stats.forward), std::make_pair("reverse", &s.stats.reverse)}) {
+        if (!first) m << ','; first = false;
+        m << '"' << item.first << "\":{";
+        const auto& x = *item.second;
+#define SS_LINK_FIELD(n) m << "\"" #n "\":" << x.n << ','
+        SS_LINK_FIELD(tx_new_flits); SS_LINK_FIELD(tx_replay_flits); SS_LINK_FIELD(ack_count);
+        SS_LINK_FIELD(nak_count); SS_LINK_FIELD(stale_nak_count); SS_LINK_FIELD(crc_fail_count);
+        SS_LINK_FIELD(seq_fail_count); SS_LINK_FIELD(duplicate_drop_count); SS_LINK_FIELD(retry_buffer_full_events);
+        SS_LINK_FIELD(max_retry_buffer_occupancy); SS_LINK_FIELD(replay_timeout_events); SS_LINK_FIELD(total_phy_frames);
+        SS_LINK_FIELD(total_symbols); SS_LINK_FIELD(symbol_errors); SS_LINK_FIELD(total_bits); SS_LINK_FIELD(bit_errors);
+        SS_LINK_FIELD(deskew_failures); SS_LINK_FIELD(extra_error_flits);
+#undef SS_LINK_FIELD
+        m << "\"cdr_lock_loss_count\":" << x.cdr_lock_loss_count << '}';
+    }
+    m << "}}\n";
 }
 }

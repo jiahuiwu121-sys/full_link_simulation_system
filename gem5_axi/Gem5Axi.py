@@ -1,5 +1,6 @@
 from m5.objects.SystemC import SystemC_ScModule
 from m5.objects.Tlm import TlmTargetSocket
+from m5.objects.Device import BasicPioDevice
 from m5.SimObject import SimObject, PyBindMethod
 from m5.params import *
 from m5.proxy import Parent
@@ -10,6 +11,7 @@ class AxiDemo(SystemC_ScModule):
     cxx_class = 'storage_axi::Demo'
     cxx_header = 'gem5_axi/axi_demo.hh'
     cxx_exports = [PyBindMethod('finish')]
+    system = Param.System(Parent.any, 'Requestor names for metrics')
     tlm = TlmTargetSocket(64, 'Nonblocking transaction input')
     backend = Param.String('ram', 'ram or aou full UCIe path')
     planes = Param.Unsigned(1, 'AoU resource planes (1..4)')
@@ -42,3 +44,14 @@ class AxiPacketTester(SimObject):
     base = Param.Addr(0x90000000, 'Target base')
     trace_dir = Param.String('', 'Result directory')
     response_hold = Param.Latency('7ns', 'Hold each response before retry')
+
+
+class MetricsMarker(BasicPioDevice):
+    type = 'MetricsMarker'
+    cxx_class = 'gem5::MetricsMarker'
+    cxx_header = 'gem5_axi/metrics_marker.hh'
+    # Override inherited defaults; redeclaring Param would shadow the C++
+    # BasicPioDeviceParams fields and leave the base address uninitialized.
+    pio_addr = 0x70000000
+    pio_latency = '1ns'
+    trace_dir = Param.String('', 'Statistics output directory')

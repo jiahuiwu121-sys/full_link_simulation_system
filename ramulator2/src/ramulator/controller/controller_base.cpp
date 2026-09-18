@@ -252,6 +252,12 @@ void ControllerBase::tick_prologue() {
   m_clk++;
   m_measured_clk++;
 
+  const auto depths = integration_depths();
+  for (size_t i = 0; i < depths.size(); ++i) {
+    auto& q = integration_queues[i];
+    q.sum += depths[i]; q.peak = std::max(q.peak, depths[i]);
+    q.nonempty_cycles += depths[i] != 0;
+  }
   s_queue_len += m_read_buffer.size() + m_write_buffer.size() + m_priority_buffer.size();
   s_read_queue_len += m_read_buffer.size();
   s_write_queue_len += m_write_buffer.size();
@@ -484,6 +490,7 @@ void ControllerBase::finalize() {
 }
 
 void ControllerBase::reset_stats() {
+  integration_queues = {};
   m_measured_clk = 0;
 
   s_row_hits = 0;

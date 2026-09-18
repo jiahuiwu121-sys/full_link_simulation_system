@@ -18,6 +18,7 @@
 #include "mem/packet_access.hh"
 #include "mem/port_proxy.hh"
 #include <limits>
+#include <fstream>
 #include "sim/core.hh"
 #include "sim/sim_exit.hh"
 #include "sim/system.hh"
@@ -79,6 +80,7 @@ VortexGPGPU::VortexGPGPU(const Params &p)
     traceActive_(false),
     dmaDoneEvent_([this]{ this->dmaComplete(); }, name() + ".dmaDone")
 {
+    metricsDir_ = p.metrics_dir;
     if (libraryPath_.empty()) {
         fatal("VortexGPGPU: 'library' parameter is required "
               "(path to libvortex-gem5.so)");
@@ -390,6 +392,7 @@ VortexGPGPU::startVortexIfReady()
     if (!vortexStartPending_ || activeCpDma_ || !cpDmaQueue_.empty())
         return;
     vortexStartPending_ = false;
+    kernelWindows_.emplace_back(curTick(), 0);
     if (!vortexTickEvent_.scheduled())
         schedule(vortexTickEvent_, clockEdge(Cycles(1)));
 }
@@ -427,6 +430,22 @@ VortexGPGPU::openTrace()
 void
 VortexGPGPU::closeTrace()
 {
+    if (!metricsDir_.empty()) {
+        std::ofstream f(metricsDir_ + "/gpu_device_metrics.json");
+        f << "{\"cp_cycles\":" << cpCycles_ << ",\"vortex_cycles\":" << vortexCycles_
+          << ",\"clock_period_fs\":" << clockPeriod() << ",\"core_reads\":" << coreTimingReads_
+          << ",\"core_writes\":" << coreTimingWrites_ << ",\"cp_reads\":" << cpTimingReads_
+          << ",\"cp_writes\":" << cpTimingWrites_ << ",\"timing_completions\":" << timingCompletions_
+          << ",\"timing_latency_sum_fs\":" << timingLatencyTotal_ << ",\"timing_latency_max_fs\":" << timingLatencyMax_
+          << ",\"end_tick_fs\":" << curTick() << ",\"kernel_windows\":[";
+        for (size_t i = 0; i < kernelWindows_.size(); ++i) {
+            if (i) f << ',';
+            f << "{\"start_tick_fs\":" << kernelWindows_[i].first
+              << ",\"end_tick_fs\":" << kernelWindows_[i].second << '}';
+        }
+        f << "]}\n";
+        fatal_if(!f, "VortexGPGPU: cannot write device metrics");
+    }
     if (traceActive_) {
         traceActive_ = false;
         const uint64_t n = (traceAbi_.emitted != nullptr)
@@ -491,6 +510,7 @@ VortexGPGPU::startup()
                   kernelPath_);
         }
         standalone_ = true;
+        kernelWindows_.emplace_back(curTick(), 0);
         schedule(vortexTickEvent_, clockEdge(Cycles(1)));
     } else {
         // Hosted mode: the host runtime issues CP MMIO writes to configure
@@ -539,6 +559,8 @@ VortexGPGPU::vortexTick()
         schedule(vortexTickEvent_, clockEdge(Cycles(1)));
         return;
     }
+    if (!kernelWindows_.empty() && !kernelWindows_.back().second)
+        kernelWindows_.back().second = curTick();
     if (standalone_) {
         inform("VortexGPGPU: standalone kernel complete — exiting sim loop");
         closeTrace();

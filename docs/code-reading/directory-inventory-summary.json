@@ -1,0 +1,27 @@
+{
+  "scanned_at": "2026-09-18T03:35:18.952286+00:00",
+  "base_commit": "ae481cb6267cbcb0fb6461dd03efafa86e13e4e9",
+  "scope": "physical workspace, including ignored build/results/handoff; excludes .git metadata; directory symlinks listed without following; inventory outputs excluded from file counts",
+  "entries": 5259,
+  "physical_directories": 5255,
+  "directory_symlinks": 4,
+  "manually_explained_directories": 326,
+  "top_level": {
+    ".vscode": 1,
+    "axi2flit": 43,
+    "build": 487,
+    "coralnpu": 1087,
+    "docs": 38,
+    "env": 53,
+    "gem5": 15467,
+    "gem5_axi": 92,
+    "gem5_new": 119,
+    "integrate_doc": 17,
+    "protocol": 1,
+    "ramulator2": 1286,
+    "results": 35522,
+    "ucie-model": 20,
+    "vortex-gpu": 4620
+  },
+  "interpretation": "directory roles inherited from documented ancestors are not individual manual code reviews"
+}

@@ -33,6 +33,7 @@ table{border-collapse:collapse;background:white}td,th{border:1px solid #dce2ed;p
 button,select{padding:8px;margin:8px 4px}th{position:sticky;top:0;background:#eaf0f9}</style>
 <h1>Ramulator2 在线后端</h1><p>实际 DRAM 命令、数据服务与内存结果。功耗为 DRAM 估算，范围和参数见报告。</p>
 <a href="trace_view.html">AXI / UCIe 链路视图</a>
+ · <a href="metrics.html">分模块与整体实验统计</a>
 <pre id="summary"></pre><select id="kind"><option value="commands">DRAM 命令</option><option value="bridge">请求与数据服务</option><option value="image">最终数据</option></select>
 <button id="prev">上一页</button><button id="next">下一页</button><span id="status"></span><div id="table"></div>
 <script>

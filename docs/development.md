@@ -53,6 +53,8 @@ archive/*分支是原维护机器上的辅助历史入口，不要求新克隆�
 - gem5/CoralNPU基础适配已纳入主仓库源码；安装入口只刷新设备和库构建副本，不重复打补丁。
 - Ramulator2在线C ABI在ramulator2/integration；桥接和唯一backing在gem5_axi。原生库仅导出ssr_*，避免与Vortex内部Ramulator冲突。
 - env/record.py输出的*.patch是运行时差异快照，不是构建时对内部目录应用的补丁。
+- 指标收集/统计契约在gem5_axi/scripts/collect_metrics.py、check_metrics.py；原生采样在ramulator2/integration。
+  每个模块独立输出及整体汇总、功耗窗口口径见[实验指标说明](experiment-metrics.md)。修改统计也要验证不改变命令序列与原有总值。
 
 迁移备份在本地integrate_doc/repository_migration_20260911，包括原Git bundle、
 工作区压缩包和每次pull日志。integrate_doc暂不进入主仓库；核心维护说明以本文件为准。

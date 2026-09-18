@@ -21,6 +21,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#include "../../../gem5_axi/workloads/metrics_marker.h"
 
 // ---- addrmap.json: regions.shared_buffer ----------------------------------
 // 与 coralnpuint/ddr_touch.cc 里的 kIn/kOut 必须一致；那边是 NPU 侧的同一段。
@@ -136,6 +138,8 @@ static int run_npu(void)
 
 int main(int argc, char **argv)
 {
+    const int metrics = getenv("SS_METRICS_MARKERS") != NULL;
+    if (metrics) ss_metrics_mark(1);
     int want_npu = 0;
     for (int i = 1; i < argc; ++i) {
         // 两种写法都收。het_system.py 的 --options 是 argparse 解析的，值以 "--"
@@ -170,10 +174,12 @@ int main(int argc, char **argv)
             }
         }
         printf("host: 无加速器模式，共享区读写自检通过\n");
+        if (metrics) ss_metrics_mark(2);
         return 0;
     }
 
     const int rc = run_npu();
     printf(rc == 0 ? "host: 全部通过\n" : "host: 失败\n");
+    if (metrics && rc == 0) ss_metrics_mark(2);
     return rc;
 }

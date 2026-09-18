@@ -160,6 +160,7 @@ public:
     }
 
     const CreditMatrix& initial_capacity() const { return rx_capacity_; }
+    const CreditMatrix& available() const { return tx_available_; }
 
     // 为普通数据 flit 生成 MsgCredit。一个 header 只能为一个 RP 发放 credit，
     // 因此在活跃 RP 之间轮转，避免高编号 RP 长期得不到回填。

@@ -14,6 +14,12 @@ CPU / Vortex GPU / CoralNPU → 原生AXI256 → AXI2Flit → UCIe → 在线Ram
 
 独立内存模拟器位于 [`ramulator2/`](ramulator2/README.md)，包含 HBM3、HBM4、LPDDR5、LPDDR6 及 DRAMPower 功耗模型，其构建和使用说明见该目录 README。全链路默认在线后端为 `ramulator2`；接入契约、配置和验收见[在线后端说明](docs/ramulator-integration.md)。
 
+整体架构、核心文件职责、上下游接口及一次访存的完整路径见[当前系统解读](docs/code-reading/09-current-system-walkthrough.md)。[当前全文件清单](docs/code-reading/current-file-map.csv)包含主仓库与已初始化的 Vortex 递归依赖；核心文件人工说明与其余文件的静态目录分类分别标记。
+
+源码、构建、结果和本地交接目录的职责与维护位置见[目录详解](docs/code-reading/10-directory-guide.md)；[全目录清单](docs/code-reading/directory-inventory.csv)覆盖当前工作区实体目录及目录符号链接。
+
+每次运行自动输出各模块独立统计、全链路汇总、按源延迟分位数、请求关联和DRAM功耗时间序列；批次运行同时生成指标总索引。输出文件、原生指标兼容口径、任务/kernel窗口及功耗估计范围见[实验指标说明](docs/experiment-metrics.md)。
+
 2026-09-17 已完成在线替代后的构建与验收：八组 CPU/定向、四组 GPU/NPU、旧 RAM/simple 兼容链路均通过，包含真实数据、实际命令、DRAMPower 和独立 VCD 审计。[本机结果与时序反馈](docs/ramulator-integration.md#2026-09-17-本机验收)记录配置、报告位置及估算功耗边界。
 
 gem5和coralnpu已转为主仓库普通源码，直接打开gem5/src、coralnpu/hdl和coralnpu/hw_sim，

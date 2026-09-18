@@ -11,6 +11,7 @@ class CoralNPU(DmaDevice):
     type = "CoralNPU"
     cxx_header = "dev/coralnpu/coralnpu_dev.hh"
     cxx_class = "gem5::CoralNPU"
+    metrics_dir = Param.String("", "Independent device statistics directory")
 
     # Path to libcoralnpu-gem5.so, produced by
     #   bazel build //gem5int:libcoralnpu-gem5.so

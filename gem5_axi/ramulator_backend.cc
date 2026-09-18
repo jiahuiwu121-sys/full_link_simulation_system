@@ -81,17 +81,22 @@ void RamulatorBackend::accept(SimpleMemRequest req) {
     bursts.push_back(b);
 }
 void RamulatorBackend::submit() {
-    if (active.size() >= childLimit) { ++submitStalls; return; }
+    if (active.size() >= childLimit) { ++submitStalls; ++childLimitCycles; return; }
+    bool hazardThisCycle = false;
     for (const auto& b : bursts) for (unsigned i = 0; i < b->descriptors.size(); ++i) {
         auto& d = b->descriptors[i]; if (d.submitted) continue;
-        if (hazards.at(d.address).front() != d.token) { ++hazardStalls; continue; }
+        if (hazards.at(d.address).front() != d.token) {
+            ++hazardStalls;
+            if (!hazardThisCycle) { ++hazardCycles; hazardThisCycle = true; }
+            continue;
+        }
         const int accepted = checked(ssr_submit(native, d.token, d.address, b->req.write));
         if (accepted) {
             d.submitted = true; active.emplace(d.token, Child{b, i}); ++submitted;
             event("submit", *b, d.offset, d.bytes, d.token, 0, 0,
                   b->req.write ? b->data.data() + d.offset : nullptr,
                   b->req.write ? b->mask.data() + d.offset : nullptr);
-        } else { ++submitStalls; event("submit_stall", *b, d.offset, d.bytes, d.token); }
+        } else { ++submitStalls; ++nativeRejectCycles; event("submit_stall", *b, d.offset, d.bytes, d.token); }
         return; // At most one actual submission per DRAM tick.
     }
 }
@@ -137,6 +142,13 @@ void RamulatorBackend::run() {
         sc_assert((cycle + 1) * period == gem5::curTick());
         checked(ssr_step(native)); ++cycle;
         ssr_event e; while (checked(ssr_poll_event(native, &e))) process(e);
+        // Post-service, pre-return/admission sample; no queue or scheduling mutation.
+        parentDepthSum += bursts.size(); childDepthSum += active.size();
+        parentPeak = std::max<uint64_t>(parentPeak, bursts.size());
+        childPeak = std::max<uint64_t>(childPeak, active.size());
+        if (bursts.size() >= slots && request.num_available()) ++ingressFullCycles;
+        if (!bursts.empty() && bursts.front()->remaining &&
+            std::any_of(bursts.begin() + 1, bursts.end(), [](const auto& b) { return !b->remaining; })) ++holCycles;
         if (!bursts.empty()) {
             auto& b = *bursts.front();
             if (!b.remaining) {
@@ -144,7 +156,11 @@ void RamulatorBackend::run() {
                 if (gem5::curTick() >= b.ready && response.nb_write(b.rsp)) {
                     event("return", b, 0, b.length, 0, 0, 0, b.req.write ? nullptr : b.data.data());
                     ++completed; if (b.rsp.resp) ++error_responses; bursts.pop_front();
-                } else ++responseStalls;
+                } else {
+                    ++responseStalls;
+                    if (gem5::curTick() < b.ready) ++holdCycles;
+                    else ++responseFifoCycles;
+                }
             }
         }
         SimpleMemRequest req;
@@ -164,4 +180,14 @@ void RamulatorBackend::finish() {
       << ",\"period_fs\":" << period << ",\"base\":" << base << ",\"size\":" << size
       << ",\"native_end_tick_fs\":" << cycle * period << ",\"simulation_end_tick_fs\":" << gem5::curTick()
       << ",\"allocated_pages\":" << backing.allocatedPages() << ",\"ordering\":\"transaction serialized; parent FIFO\"}\n";
+    std::ofstream m(dir + "/backend_queue_metrics.json");
+    m << "{\"cycles\":" << cycle << ",\"period_fs\":" << period
+      << ",\"measurement\":\"post-service pre-return/admission cycle samples\""
+      << ",\"parent_depth_cycle_sum\":" << parentDepthSum << ",\"child_depth_cycle_sum\":" << childDepthSum
+      << ",\"parent_peak\":" << parentPeak << ",\"child_peak\":" << childPeak
+      << ",\"parent_capacity\":" << slots << ",\"child_capacity\":" << childLimit
+      << ",\"stall_cycles\":{\"ingress_full\":" << ingressFullCycles
+      << ",\"child_limit\":" << childLimitCycles << ",\"native_reject\":" << nativeRejectCycles
+      << ",\"address_hazard\":" << hazardCycles << ",\"forced_response_hold\":" << holdCycles
+      << ",\"response_fifo_full\":" << responseFifoCycles << ",\"parent_fifo_hol\":" << holCycles << "}}\n";
 }

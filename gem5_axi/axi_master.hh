@@ -15,6 +15,7 @@ struct RequestAttributes : tlm::tlm_extension<RequestAttributes> {
     uint32_t requestor = 0, stream = 0, substream = 0;
     bool hasStream = false, hasSubstream = false;
     uint64_t payloadDelay = 0;
+    uint64_t packetId = 0;
     tlm::tlm_extension_base* clone() const override {
         return new RequestAttributes(*this);
     }
@@ -38,6 +39,7 @@ class Master : public sc_core::sc_module {
     unsigned maxId = 65535; // Inclusive wire-ID limit; set before simulation.
     uint64_t accepted = 0, completed = 0, maxActive = 0;
     uint64_t cycle = 0;
+    std::function<std::string(uint32_t)> requestorName;
   private:
     struct Burst { uint64_t address; unsigned offset, bytes, beats, size; };
     struct Txn {
@@ -47,6 +49,7 @@ class Master : public sc_core::sc_module {
         unsigned segment = 0, wbeat = 0, rbeat = 0;
         uint64_t awAfter = 0, wAfter = 0, arAfter = 0;
         uint64_t begin = 0, accept = 0, axiDone = 0;
+        uint64_t uid = 0;
     };
     unsigned slots;
     bool stalls;
@@ -58,6 +61,9 @@ class Master : public sc_core::sc_module {
     std::deque<uint16_t> awq, wq, arq, responses;
     tlm::tlm_generic_payload* responding = nullptr;
     std::ofstream trace;
+    std::ofstream segments;
+    std::ofstream metadata;
+    uint64_t nextUid = 1;
     tlm::tlm_sync_enum transport(tlm::tlm_generic_payload&, tlm::tlm_phase&,
                                 sc_core::sc_time&);
     void blocking(tlm::tlm_generic_payload&, sc_core::sc_time&);

@@ -7,12 +7,15 @@ destination=${1:-"$SS_ROOT/results/ramulator2-$(date -u +%Y%m%dT%H%M%SZ)"}
 [[ ! -e "$destination" ]] || { echo "结果目录已存在：$destination" >&2; exit 1; }
 mkdir -p "$destination" "$AXI_PROJECT_DIR/build"
 destination=$(cd "$destination" && pwd)
+"$AXI_PYTHON" "$AXI_PROJECT_DIR/tests/metrics_contract_test.py" > "$destination/metrics-contract.log" 2>&1
 "$AXI_PYTHON" "$SS_ROOT/env/check_sources.py"
 "$AXI_PYTHON" "$SS_ROOT/env/record.py" "$destination/environment"
 ctest --test-dir "$RAMULATOR_BUILD" --show-only=json-v1 > "$destination/native-test-plan.json"
 ctest --test-dir "$RAMULATOR_BUILD" --output-on-failure > "$destination/native-tests.log" 2>&1
 "$AXI_PYTHON" "$RAMULATOR_HOME/integration/check_online.py" \
     "$RAMULATOR_BUILD/lib/libstoragestacked_ramulator2.so" "$destination/api"
+"$AXI_PYTHON" "$RAMULATOR_HOME/integration/check_metrics_sampling.py" \
+    "$RAMULATOR_BUILD/lib/libstoragestacked_ramulator2.so" "$destination/metrics_sampling"
 "$AXI_CC" -O2 -static -nostdlib -ffreestanding -fno-stack-protector -fno-pie -no-pie -Wl,-e,_start \
     "$AXI_PROJECT_DIR/workloads/ramulator_check.c" -o "$AXI_PROJECT_DIR/build/ramulator_check"
 run_case() {
@@ -27,7 +30,7 @@ run_case() {
     "$AXI_PYTHON" "$AXI_PROJECT_DIR/scripts/check.py" "$dir" "${flags[@]}"
     flags=(); [[ $name != replay ]] || flags+=(--replay)
     "$AXI_PYTHON" "$AXI_PROJECT_DIR/scripts/check_aou.py" "$dir" "${flags[@]}"
-    for checker in inspect_link check_ramulator trace_view ramulator_view; do
+    for checker in inspect_link check_ramulator check_metrics trace_view ramulator_view; do
         "$AXI_PYTHON" "$AXI_PROJECT_DIR/scripts/$checker.py" "$dir"
     done
 }
@@ -47,5 +50,7 @@ run_case cpu_slow --mode cpu --no-stalls --binary "$AXI_PROJECT_DIR/build/ramula
 "$AXI_PYTHON" "$AXI_PROJECT_DIR/scripts/check_aou_negative.py" "$destination/directed"
 "$AXI_PYTHON" "$AXI_PROJECT_DIR/scripts/check_link_negative.py" "$destination/directed"
 "$AXI_PYTHON" "$AXI_PROJECT_DIR/scripts/check_axi256.py" "$destination/directed"
+"$AXI_PYTHON" "$AXI_PROJECT_DIR/scripts/check_metrics_negative.py" "$destination/directed"
 "$AXI_PYTHON" "$SS_ROOT/env/verify_ramulator.py" "$destination"
+"$AXI_PYTHON" "$SS_ROOT/env/summarize_metrics.py" "$destination"
 echo "Ramulator2 全链路验收通过：$destination/summary.json"

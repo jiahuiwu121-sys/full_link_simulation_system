@@ -73,6 +73,8 @@ public:
     void startup() override;
 
 private:
+    std::string metricsDir_;
+    std::vector<std::pair<Tick, Tick>> kernelWindows_;
     // CP tick — advances the embedded CommandProcessor one functional
     // cycle. Self-reschedules iff cp_tick reported still-busy.
     void cpTick();

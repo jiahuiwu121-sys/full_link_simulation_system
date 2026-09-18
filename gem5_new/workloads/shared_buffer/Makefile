@@ -15,7 +15,7 @@ BUILD   := build
 
 all: $(BUILD)/host_main
 
-$(BUILD)/host_main: host_main.c | $(BUILD)
+$(BUILD)/host_main: host_main.c ../../../gem5_axi/workloads/metrics_marker.h | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $<
 
 $(BUILD):

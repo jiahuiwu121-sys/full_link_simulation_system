@@ -45,6 +45,7 @@ def build(d):
     template=r'''<!doctype html><html lang="zh"><meta charset="utf-8"><title>AXI / UCIe 运行记录</title>
 <style>body{font:15px system-ui;max-width:1500px;margin:30px auto;padding:0 18px;color:#193047}h1{font-size:26px}p{line-height:1.7}input,select,button{font:inherit;padding:5px;margin:4px}table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:7px;border-bottom:1px solid #dbe2e8;text-align:left}th{position:sticky;top:0;background:#eef4f8}tr:hover{background:#edf7fc;cursor:pointer}.scroll{max-height:300px;overflow:auto;border:1px solid #cbd8e0;margin:12px 0}.raw{font:13px monospace;white-space:pre-wrap;word-break:break-all;background:#f4f7f9;padding:16px}.bad{background:#ffd8d3}img{width:100%}a{color:#08648c}</style>
 <h1>AXI / UCIe 实际运行记录 · __CASE__</h1>
+<p><a href="metrics.html">分模块与整体实验统计</a></p>
 <p>先输入 AXI ID，再点击一条握手记录，下表会显示承载该消息的 Flit 在两端的发送和接收。最后点击 Flit 查看全部原始字节。
 数据按页加载，每页最多100条；Flit按方向和序号排列。请将HTML与旁边的数据目录一起保留。
 时间来自统一的 1fs 仿真时间轴。seq 是链路序号，不是 AXI ID；一个 Flit 可承载多条消息，一条消息也可跨 Flit。</p>

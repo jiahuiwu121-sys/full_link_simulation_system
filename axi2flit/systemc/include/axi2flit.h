@@ -61,6 +61,15 @@ public:
                       unsigned rp_count = DEFAULT_RESOURCE_PLANES);
 
     unsigned rp_count() const { return rp_count_; }
+    unsigned long packed_flits() const { return packer.flits_sent(); }
+    unsigned long packed_granules() const { return packer.granules_sent(); }
+    const CreditMatrix& available_credits() const { return packer.available_credits(); }
+    bool credit_blocked(unsigned rp, unsigned kind) const { return packer.credit_blocked(rp, kind); }
+    std::array<unsigned, 5> queue_depths(unsigned rp) const {
+        return {unsigned(sig_wreq_fifo[rp].num_available()), unsigned(sig_rreq_fifo[rp].num_available()),
+                unsigned(sig_wdata_fifo[rp].num_available()), unsigned(sig_rdata_fifo[rp].num_available()),
+                unsigned(sig_wresp_fifo[rp].num_available())};
+    }
 
     /**
      * 同 ID 跨 RP 的顺序违例计数（资源平面顺序约束，见 rp_order_guard.h）。

@@ -1,0 +1,33 @@
+{
+  "date": "2026-09-18",
+  "base_commit": "ae481cb6267cbcb0fb6461dd03efafa86e13e4e9",
+  "scope": "current working files: tracked main repo, nonignored main untracked files, initialized recursive external submodules; generated current-map outputs excluded",
+  "total_entries": 16200,
+  "module_counts": {
+    "(root)": 4,
+    "axi2flit": 43,
+    "coralnpu": 1087,
+    "docs": 38,
+    "env": 36,
+    "gem5": 10945,
+    "gem5_axi": 65,
+    "gem5_new": 107,
+    "protocol": 1,
+    "ramulator2": 613,
+    "ucie-model": 20,
+    "vortex-gpu": 3241
+  },
+  "kind_counts": {
+    "binary/data": 193,
+    "build": 666,
+    "config": 815,
+    "config/text": 473,
+    "documentation": 419,
+    "source": 11916,
+    "submodule": 9,
+    "text/data": 1709
+  },
+  "reviewed_role_files": 205,
+  "reviewed_interface_files": 191,
+  "extraction": "manual role/interface table for linked core files; other rows static directory hints with no inferred upstream/downstream; index_blob describes Git index, not working-file hash"
+}

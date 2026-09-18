@@ -1,6 +1,7 @@
 #ifndef RAMULATOR_CONTROLLER_CONTROLLER_BASE_H
 #define RAMULATOR_CONTROLLER_CONTROLLER_BASE_H
 
+#include <array>
 #include <deque>
 #include <string>
 #include <unordered_set>
@@ -44,6 +45,16 @@ class ControllerBase : public IController, public Implementation {
   std::function<void(const Request&, const ControllerBase&)> issue_observer;
   bool has_pending_demand() const;
   int get_period_ps() const { return m_tCK_ps; }
+
+  // Passive integration metrics. Queue integrals use the same pre-service
+  // sample as native queue_len; active and pending are reported separately.
+  struct QueueMetric { uint64_t sum = 0, peak = 0, nonempty_cycles = 0; };
+  std::array<QueueMetric, 5> integration_queues{};
+  std::array<uint64_t, 5> integration_depths() const {
+    return {m_read_buffer.size(), m_write_buffer.size(), m_priority_buffer.size(),
+            m_active_buffer.size(), m_pending.size()};
+  }
+
 
   bool send(Request& req) override;
   bool priority_send(Request& req) override;

@@ -36,6 +36,9 @@ class RamulatorBackend : public sc_core::sc_module {
     struct Child { std::shared_ptr<Burst> burst; unsigned index; };
     uint64_t base, size, period, cycle = 0, nextBurst = 1, nextToken = 1;
     uint64_t submitted = 0, services = 0, submitStalls = 0, hazardStalls = 0, responseStalls = 0;
+    uint64_t parentDepthSum = 0, childDepthSum = 0, parentPeak = 0, childPeak = 0;
+    uint64_t ingressFullCycles = 0, childLimitCycles = 0, nativeRejectCycles = 0;
+    uint64_t hazardCycles = 0, holdCycles = 0, responseFifoCycles = 0, holCycles = 0;
     unsigned slots, childLimit, hold;
     ssr_info info{};
     ssr_memory* native = nullptr;

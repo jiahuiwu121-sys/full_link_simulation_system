@@ -1,12 +1,20 @@
 # 项目源码解读导航
 
-本解读的初始静态扫描记录日期为 2026-09-17。目标是解释各部分的职责、前后接口、调用关系、数据与时间的所有权，以及整个系统可以研究什么。随后已按用户要求实现在线 Ramulator2 替代；当前代码、配置及运行入口以[在线后端说明](../ramulator-integration.md)为准。01—08 保留替代前的源码分析与方案，文件索引也保留初始扫描基线。
+当前版本的完整阅读入口是[09：整体架构、文件职责和前后接口](09-current-system-walkthrough.md)，以已接入 Ramulator2 的运行系统为准；配置与实际验收见[在线后端说明](../ramulator-integration.md)。[当前全文件清单](current-file-map.csv)覆盖主仓库和已初始化的 Vortex 递归子模块，核心文件列出人工解读的职责与上下游，其他文件给出静态分类。可执行 `python3 docs/code-reading/generate_current_map.py` 刷新清单，统计与范围见[current-file-map-summary.json](current-file-map-summary.json)。
+
+[10：当前目录职责详解](10-directory-guide.md)按工作区目录说明源码、接口、维护位置、构建产物、结果和本地交接资料；[全目录清单](directory-inventory.csv)包含实体目录及不展开的目录符号链接，深层职责继承单独标记。执行 `python3 docs/code-reading/generate_directory_inventory.py` 刷新，扫描范围和统计见[directory-inventory-summary.json](directory-inventory-summary.json)。
+
+[11：实验指标与公开文献依据](11-experiment-metrics-and-literature.md)区分整体/局部指标、已有/可派生/需补充的观测，定义统计窗口、来源关联、功耗口径、实验矩阵及实施优先级。
+
+落地的分模块统计、每次运行自动汇总、请求/Flit来源关联与窗口功耗输出见[实验指标实现](../experiment-metrics.md)。
+
+初始静态扫描记录日期为 2026-09-17。01—08 保留替代前的源码分析与方案，`source-index.*` 和 `inventory/` 保留初始扫描基线；其中旧状态和旧行号不能替代当前实现。
 
 项目的核心是异构计算设备的存储访问联合仿真平台：CPU、Vortex SimX GPU、CoralNPU RTL 的目标访存通过 gem5 原生 TLM、真实 AXI256 五通道、AXI2Flit 和双向 UCIe 行为链路，交给在线内存后端，再把完成响应送回设备，使存储延迟能够影响设备后续执行。程序代码、CPU 栈等仍使用本地 gem5 主存。
 
 ## 解读范围与证据
 
-本次索引覆盖 12,899 个主仓库条目，其中按扩展名与文件名规则识别 9,669 个源码文件，约 218 万行源码（不等于实际执行代码量）。gem5、CoralNPU、Ramulator2 包含大量上游实现、平台支持、测试和第三方代码。“全仓文件索引”覆盖本次扫描时主仓库索引中的全部文件；正文对系统集成链路作人工语义解读，对大型上游目录按子系统解释，并深入分析实际接入点。文件索引中的职责提示、符号与依赖是静态提取，不等于每个上游函数均已逐行人工审阅，也不构成完整程序的精确调用图。
+初始索引覆盖 12,899 个主仓库条目，其中按扩展名与文件名规则识别 9,669 个源码文件，约 218 万行源码（不等于实际执行代码量）。当前清单另外包含新增集成文件和已初始化的 Vortex 递归依赖，具体计数以当前统计 JSON 为准。gem5、CoralNPU、Ramulator2 包含大量上游实现、平台支持、测试和第三方代码；正文深入解释系统集成，对大型上游目录按子系统分析。文件分类、候选符号和直接依赖不等于每个上游函数均已逐行人工审阅，也不构成完整程序的精确调用图。
 
 本地 `integrate_doc/HANDOFF.md` 和 `integrate_doc/09_migration.md` 未分发，按根目录约定以已提交文档和源码为准。初始工作区没有 Git 修改。
 
@@ -18,6 +26,8 @@
 - 初始扫描是静态分析和文档整理；后续替代实施已准备依赖、初始化锁定的 Vortex 子模块并完成构建。新的运行验证见在线后端说明，不能与初始扫描或历史 memsim 验收混用。
 
 ## 建议阅读顺序
+
+先读 [09 当前系统解读](09-current-system-walkthrough.md)，再按需要查[当前清单](current-file-map.csv)。以下 01—08 为初始分析及设计依据，HTML/Markdown 旧索引用于补充查找大型上游文件。
 
 1. [01：整体架构与运行模式](01-architecture.md)：先认识完整链路、旁路和各目录归属。
 2. [02：接口、地址、时间与顺序契约](02-interfaces.md)：解决“上下游具体传什么、何时算完成”。

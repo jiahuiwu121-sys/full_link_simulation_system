@@ -21,6 +21,7 @@ class VortexGPGPU(DmaDevice):
     type = "VortexGPGPU"
     cxx_header = "dev/vortex/vortex_gpgpu_dev.hh"
     cxx_class = "gem5::VortexGPGPU"
+    metrics_dir = Param.String("", "Independent device statistics directory")
 
     # Path to libvortex-gem5.so produced by `make -C sim/simx
     # USE_GEM5=1` in the Vortex build dir. Required; the C++ ctor

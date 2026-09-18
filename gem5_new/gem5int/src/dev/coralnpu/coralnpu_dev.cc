@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <dlfcn.h>
 #include <limits>
+#include <fstream>
 
 #include "base/logging.hh"
 #include "base/trace.hh"
@@ -68,6 +69,7 @@ CoralNPU::CoralNPU(const Params &p)
     traceActive_(false),
     cycles_(0)
 {
+    metricsDir_ = p.metrics_dir;
     if (libraryPath_.empty()) {
         fatal("CoralNPU: 'library' parameter is required "
               "(path to libcoralnpu-gem5.so)");
@@ -359,12 +361,23 @@ CoralNPU::openTrace()
     // gem5 does not reliably destroy SimObjects at exit, so the destructor
     // alone is not enough to get the buffered tail and the .meta.json sidecar
     // onto disk.
-    registerExitCallback([this]{ this->closeTrace(); });
 }
 
 void
 CoralNPU::closeTrace()
 {
+    if (!metricsDir_.empty()) {
+        std::ofstream f(metricsDir_ + "/npu_device_metrics.json");
+        f << "{\"cycles\":" << cycles_ << ",\"clock_period_fs\":" << clockPeriod()
+          << ",\"started\":" << (started_ ? "true" : "false")
+          << ",\"kernel_start_tick_fs\":" << kernelStartTick_ << ",\"kernel_end_tick_fs\":" << kernelEndTick_
+          << ",\"timing_reads\":" << timingReads_ << ",\"timing_writes\":" << timingWrites_
+          << ",\"read_latency_sum_fs\":" << readLatencyTotal_ << ",\"write_latency_sum_fs\":" << writeLatencyTotal_
+          << ",\"read_latency_max_fs\":" << readLatencyMax_ << ",\"write_latency_max_fs\":" << writeLatencyMax_
+          << ",\"max_read_outstanding\":" << maxReadOutstanding_ << ",\"max_write_outstanding\":" << maxWriteOutstanding_
+          << ",\"end_tick_fs\":" << curTick() << "}\n";
+        fatal_if(!f, "CoralNPU: cannot write device metrics");
+    }
     if (!traceActive_) return;
     traceActive_ = false;
 
@@ -397,6 +410,7 @@ void
 CoralNPU::startup()
 {
     DmaDevice::startup();
+    registerExitCallback([this]{ this->closeTrace(); });
 
     if (shareMemory_) {
         abi_.set_timing_backend(deviceHandle_,
@@ -459,6 +473,7 @@ CoralNPU::loadAndStart()
         return;
     }
     started_ = true;
+    kernelStartTick_ = curTick();
     abi_.start(deviceHandle_, entryPc_);
     if (!tickEvent_.scheduled()) {
         schedule(tickEvent_, clockEdge(Cycles(1)));
@@ -480,6 +495,7 @@ CoralNPU::tick()
            static_cast<unsigned long long>(cycles_),
            static_cast<int>(abi_.halted(deviceHandle_)),
            static_cast<int>(abi_.wfi(deviceHandle_)));
+    kernelEndTick_ = curTick();
     if (timingReads_ != 0 || timingWrites_ != 0) {
         const auto readAvg = timingReads_ ? readLatencyTotal_ / timingReads_ : 0;
         const auto writeAvg = timingWrites_ ? writeLatencyTotal_ / timingWrites_ : 0;

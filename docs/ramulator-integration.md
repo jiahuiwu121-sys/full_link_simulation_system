@@ -116,6 +116,8 @@ DRAM 队列接受不是完成。被动 observer 观察真实 `on_issue`，RD/WR 
 
 ## 验证与结果
 
+每次运行自动输出分模块统计、全链路汇总、请求/Flit来源关联和DRAM功耗时间序列，保留原生统计名称/单位。文件与窗口口径见[实验指标说明](experiment-metrics.md)。
+
 | 产物 | 内容 |
 |---|---|
 | `ramulator_bridge.csv` | 接受、提交/重试、issue、服务、返回；AXI ID/RP、parent/token、字节和 mask |

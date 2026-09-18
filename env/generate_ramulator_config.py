@@ -10,11 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'ramulator2/python'))
 
 
-def generate_config(directory, channels=2, queue=8, clock_scale=1, power=True):
+def generate_config(directory, channels=2, queue=8, clock_scale=1, power=True, sample_cycles=1000):
     from ramulator import addr_mapper, channel_mapper, controller, dram, frontend
     from ramulator import memory_system, refresh_manager, row_policy, scheduler
     from ramulator.power import HBM34PowerModel
-    if channels < 1 or channels & (channels - 1) or queue < 1 or clock_scale < 1:
+    if channels < 1 or channels & (channels - 1) or queue < 1 or clock_scale < 1 or sample_cycles < 1:
         raise ValueError('channels must be power of two; queue/scale must be positive')
     if 8000 % clock_scale:
         raise ValueError('clock scale must divide the reference rate 8000')
@@ -29,6 +29,7 @@ def generate_config(directory, channels=2, queue=8, clock_scale=1, power=True):
 
     model = HBM34PowerModel(make_dram(), directory / 'hbm4_memspec.json')
     config = {
+        'integration_statistics': {'sample_cycles': sample_cycles},
         'frontend': frontend.External(clock_ratio=1).to_config(),
         'memory_system': memory_system.GenericDRAM(
             clock_ratio=1, channel_mapper=channel_mapper.CacheLineInterleave(),
@@ -46,6 +47,7 @@ def generate_config(directory, channels=2, queue=8, clock_scale=1, power=True):
     path.write_text(json.dumps(config, indent=2) + '\n')
     metadata = {
         'channels': channels, 'queue': queue, 'clock_scale': clock_scale, 'power': power,
+        'metrics_sample_cycles': sample_cycles,
         'config_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
         'memspec_sha256': hashlib.sha256(model.memspec_path.read_bytes()).hexdigest(),
         'model_metadata': model.memspec['modelMetadata'],
@@ -65,10 +67,12 @@ def add_options(parser, default_backend='ramulator2'):
     parser.add_argument('--ramulator-response-hold', type=int, default=0)
     parser.add_argument('--ramulator-scale', type=int, default=1, help='Generate matching slow timing/memspec experiment')
     parser.add_argument('--ramulator-no-power', action='store_true')
+    parser.add_argument('--metrics-sample-cycles', type=int, default=1000,
+                        help='Native queue/power sampling interval; exact final snapshot is always written')
 
 
 def runtime_config(args, directory, default_channels=2):
-    if min(args.ramulator_queue, args.ramulator_slots, args.ramulator_children, args.ramulator_scale) < 1 or args.ramulator_response_hold < 0:
+    if min(args.ramulator_queue, args.ramulator_slots, args.ramulator_children, args.ramulator_scale, args.metrics_sample_cycles) < 1 or args.ramulator_response_hold < 0:
         raise ValueError('invalid ramulator capacity/scale/hold')
     if args.memory_backend != 'ramulator2':
         return ''
@@ -80,7 +84,7 @@ def runtime_config(args, directory, default_channels=2):
             raise ValueError('missing Ramulator config: ' + str(path))
         return str(path)
     return generate_config(directory, default_channels if args.ramulator_channels is None else args.ramulator_channels,
-                           args.ramulator_queue, args.ramulator_scale, not args.ramulator_no_power)
+                           args.ramulator_queue, args.ramulator_scale, not args.ramulator_no_power, args.metrics_sample_cycles)
 
 
 if __name__ == '__main__':

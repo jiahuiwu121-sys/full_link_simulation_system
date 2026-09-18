@@ -65,6 +65,8 @@ public:
     void startup() override;
 
 private:
+    std::string metricsDir_;
+    Tick kernelStartTick_ = 0, kernelEndTick_ = 0;
     // Control register offsets within the PIO window. Deliberately tiny:
     // once the kernel is running, the host talks to the NPU through the
     // shared buffer and the mailbox, not through these.

@@ -6,6 +6,9 @@
 #include "ramulator/frontend/i_frontend.h"
 #include "ramulator/memory_system/i_memory_system.h"
 #include <algorithm>
+#include <cmath>
+#include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <filesystem>
@@ -34,6 +37,38 @@ struct Later {
         return a.cycle != b.cycle ? a.cycle > b.cycle : a.token > b.token;
     }
 };
+void json_string(std::ostream& out, const std::string& s) {
+    out << '"';
+    for (unsigned char c : s) {
+        if (c == '"' || c == '\\') out << '\\' << char(c);
+        else if (c < 32) out << "\\u" << std::hex << std::setw(4) << std::setfill('0') << unsigned(c) << std::dec;
+        else out << char(c);
+    }
+    out << '"';
+}
+void stats_json(std::ostream& out, const ConfigNode& node) {
+    if (node.is_map()) {
+        out << '{'; bool first = true;
+        for (const auto& [key, value] : node.map()) {
+            if (!first) out << ','; first = false;
+            json_string(out, key); out << ':'; stats_json(out, value);
+        }
+        out << '}';
+    } else if (node.is_sequence()) {
+        out << '['; bool first = true;
+        for (const auto& value : node.seq()) {
+            if (!first) out << ','; first = false; stats_json(out, value);
+        }
+        out << ']';
+    } else if (node.is_scalar()) {
+        const auto& s = node.scalar(); char* end = nullptr;
+        const double number = std::strtod(s.c_str(), &end);
+        if (s == "true" || s == "false") out << s;
+        else if (!s.empty() && end == s.c_str() + s.size() && std::isfinite(number) &&
+                 (std::isdigit(s.front()) || s.front() == '-')) out << s;
+        else json_string(out, s);
+    } else out << "null";
+}
 }
 
 struct ssr_memory {
@@ -49,6 +84,24 @@ struct ssr_memory {
     std::set<uint64_t> addresses;
     std::deque<ssr_event> events;
     std::priority_queue<ssr_event, std::vector<ssr_event>, Later> future;
+    uint64_t sample_cycles = 1000;
+    std::ofstream timeseries;
+
+    void snapshot() {
+        for (size_t i = 0; i < controllers.size(); ++i) {
+            const auto depths = controllers[i]->integration_depths();
+            PowerStats p; const bool enabled = controllers[i]->get_power_stats(p);
+            timeseries << cycle * info.period_fs << ',' << cycle << ',' << i;
+            for (auto depth : depths) timeseries << ',' << depth;
+            timeseries << ',' << pending.size() << ',' << (enabled ? 1 : 0)
+                << ',' << p.core_energy_j << ',' << p.interface_energy_j << ',' << p.total_energy_j
+                << ',' << p.activation_energy_j << ',' << p.precharge_energy_j
+                << ',' << p.read_energy_j << ',' << p.write_energy_j
+                << ',' << p.refresh_energy_j << ',' << p.rfm_energy_j
+                << ',' << p.background_energy_j << '\n';
+        }
+        require(bool(timeseries), "cannot write native metrics timeseries");
+    }
 
     void observe(const Request& req, const ControllerBase& ctrl) {
         const auto& spec = *ctrl.m_device.m_spec;
@@ -93,6 +146,9 @@ extern "C" ssr_memory* ssr_create(const char* path, uint32_t limit,
         h->limit = limit; h->dir = directory;
         std::filesystem::create_directories(h->dir);
         auto config = Config::parse_config_file(path);
+        if (config["integration_statistics"])
+            h->sample_cycles = config["integration_statistics"]["sample_cycles"].as<uint64_t>(1000);
+        require(h->sample_cycles > 0, "statistics sample_cycles must be positive");
         require(config["frontend"]["impl"].as<std::string>() == "External", "External frontend required");
         require(config["frontend"]["clock_ratio"].as<int>() == 1 &&
                 config["memory_system"]["clock_ratio"].as<int>() == 1, "embedding requires clock ratios 1");
@@ -203,6 +259,10 @@ extern "C" ssr_memory* ssr_create(const char* path, uint32_t limit,
         std::ofstream copy(h->dir + "/ramulator_config.yaml");
         std::ifstream input(path); copy << input.rdbuf();
         require(bool(input) && bool(copy), "cannot record expanded configuration");
+        h->timeseries.open(h->dir + "/ramulator_timeseries.csv");
+        h->timeseries << std::setprecision(17)
+            << "tick_fs,cycle,channel,read_queue,write_queue,priority_queue,active_queue,pending_reads,native_global_inflight,power_enabled,core_energy_j,interface_energy_j,total_energy_j,activation_energy_j,precharge_energy_j,read_energy_j,write_energy_j,refresh_energy_j,rfm_energy_j,background_energy_j\n";
+        h->snapshot();
     });
     return result < 0 ? nullptr : h.release();
 }
@@ -235,6 +295,7 @@ extern "C" int ssr_step(ssr_memory* h) {
             while (!h->future.empty() && h->future.top().cycle <= h->cycle) {
                 auto e = h->future.top(); h->future.pop(); h->events.push_back(e);
             }
+            if (h->cycle % h->sample_cycles == 0) h->snapshot();
         } catch (...) { h->failed = true; throw; }
     });
 }
@@ -260,7 +321,28 @@ extern "C" int ssr_finish(ssr_memory* h) {
         require(h && !h->finished && !h->failed && h->idle(), "finish requires fully drained live instance");
         h->memory->finalize(); h->frontend->finalize();
         h->memory->update_stats_recursive();
+        h->snapshot(); h->timeseries.flush();
+        std::ofstream queues(h->dir + "/ramulator_queue_metrics.json");
+        queues << "{\"sample_cycles\":" << h->sample_cycles
+               << ",\"measurement\":\"exact pre-service cycle samples\",\"cycles\":" << h->cycle << ",\"channels\":[";
+        const char* names[] = {"read_queue", "write_queue", "priority_queue", "active_queue", "pending_reads"};
+        for (size_t channel = 0; channel < h->controllers.size(); ++channel) {
+            if (channel) queues << ',';
+            queues << "{\"channel\":" << channel << ",\"queues\":{";
+            for (size_t i = 0; i < 5; ++i) {
+                if (i) queues << ',';
+                const auto& q = h->controllers[channel]->integration_queues[i];
+                queues << '"' << names[i] << "\":{\"depth_cycle_sum\":" << q.sum
+                    << ",\"peak\":" << q.peak << ",\"nonempty_cycles\":" << q.nonempty_cycles << '}';
+            }
+            queues << "}}";
+        }
+        queues << "]}\n";
         std::ofstream stats(h->dir + "/ramulator_stats.yaml"); h->memory->print_stats(stats);
+        // Same registered native statistics, names and units, without adding a
+        // Python YAML dependency or reimplementing the native counter formulas.
+        std::ofstream native_json(h->dir + "/ramulator_stats.json");
+        native_json << "{\"memory_system\":"; stats_json(native_json, h->memory->collect_stats()); native_json << "}\n";
         std::ofstream power(h->dir + "/dram_power.json");
         power << std::setprecision(17) << "{\"passed\":true,\"timebase\":\"native\",\"duration_seconds\":"
               << h->cycle * h->info.period_fs * 1e-15 << ",\"channels\":[";
@@ -292,7 +374,7 @@ extern "C" int ssr_finish(ssr_memory* h) {
                 << ",\"capacity_bytes\":" << h->info.capacity_bytes
                 << ",\"transaction_bytes\":" << h->info.transaction_bytes
                 << ",\"read_latency\":" << h->info.read_latency << ",\"write_latency\":" << h->info.write_latency << "}\n";
-        require(bool(stats) && bool(power) && bool(summary), "cannot write native reports");
+        require(bool(stats) && bool(native_json) && bool(power) && bool(summary) && bool(queues), "cannot write native reports");
         h->finished = true;
     });
 }

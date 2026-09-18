@@ -6,9 +6,12 @@
 namespace storage_axi {
 using namespace sc_core;
 Master::Master(sc_module_name n, unsigned s, bool st, const std::string& dir)
-    : sc_module(n), slots(s), stalls(st), trace(dir + "/transactions.csv") {
-    if (slots == 0 || slots > 65534 || !trace) throw std::runtime_error("invalid master configuration");
+    : sc_module(n), slots(s), stalls(st), trace(dir + "/transactions.csv"),
+      segments(dir + "/request_segments.csv"), metadata(dir + "/request_metadata.csv") {
+    if (slots == 0 || slots > 65534 || !trace || !segments || !metadata) throw std::runtime_error("invalid master configuration/metrics output");
     trace << "id,command,address,bytes,begin_tick,accepted_tick,axi_done_tick,end_resp_tick,segments,requestor,stream,substream,status\n";
+    metadata << "uid,id,begin_tick,source_name,enabled_bytes,packet_id\n";
+    segments << "uid,segment,id,command,address,bytes,beats,size,enqueue_tick_fs\n";
     socket.register_nb_transport_fw(this, &Master::transport);
     socket.register_b_transport(this, &Master::blocking);
     socket.register_transport_dbg(this, &Master::debug);
@@ -60,6 +63,13 @@ tlm::tlm_sync_enum Master::transport(tlm::tlm_generic_payload& gp,
           << t.axiDone << ',' << sc_time_stamp().value() << ',' << t.bursts.size()
           << ',' << (a ? a->requestor : 0) << ',' << (a ? a->stream : 0)
           << ',' << (a ? a->substream : 0) << ',' << int(gp.get_response_status()) << '\n';
+    metadata << t.uid << ',' << t.id << ',' << t.begin << ','
+             << (requestorName ? requestorName(a ? a->requestor : 0) : "unknown") << ',';
+    unsigned enabled = 0;
+    for (unsigned i = 0; i < gp.get_data_length(); ++i)
+        if (!gp.get_byte_enable_ptr() || (gp.get_byte_enable_length() && gp.get_byte_enable_ptr()[i % gp.get_byte_enable_length()])) ++enabled;
+    metadata << enabled << ',' << (a ? a->packetId : 0) << '\n';
+    metadata.flush();
     trace.flush();
     responding = nullptr;
     active.erase(it);
@@ -83,7 +93,7 @@ void Master::admit() {
     if (!nextId || nextId > maxId) nextId = 1;
     while (active.count(nextId)) nextId = nextId == maxId ? 1 : nextId + 1;
     auto t = std::make_unique<Txn>();
-    t->gp = gp; t->id = nextId++;
+    t->gp = gp; t->id = nextId++; t->uid = nextUid++;
     t->begin = pendingBegin; t->accept = sc_time_stamp().value();
     bool valid = (gp->is_read() || gp->is_write()) && gp->get_data_ptr() &&
                  gp->get_data_length() && gp->get_data_length() <= 65536 &&
@@ -104,6 +114,11 @@ void Master::admit() {
 }
 
 void Master::enqueueSegment(Txn& t) {
+    const auto& b = t.bursts[t.segment];
+    segments << t.uid << ',' << t.segment << ',' << t.id << ',' << (t.gp->is_write() ? 'W' : 'R')
+             << ',' << b.address << ',' << b.bytes * b.beats << ',' << b.beats << ',' << b.size
+             << ',' << sc_time_stamp().value() << '\n';
+    segments.flush();
     t.wbeat = t.rbeat = 0;
     // Alternate AW-leading and W-leading transfers. W order remains FIFO.
     t.awAfter = cycle + (stalls && (t.id & 1) ? 3 : 0);

@@ -5,11 +5,13 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "env"))
 from generate_ramulator_config import add_options, runtime_config
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
+from collect_metrics import install as install_metrics
 import m5
 from m5.objects import (
     System, SrcClockDomain, VoltageDomain, SimpleMemory, AddrRange, SystemXBar,
     Root, SystemC_Kernel, Gem5ToTlmBridge64, AxiDemo, AxiPacketTester,
-    X86TimingSimpleCPU, SEWorkload, Process,
+    X86TimingSimpleCPU, SEWorkload, Process, MetricsMarker,
 )
 
 parser = argparse.ArgumentParser()
@@ -83,6 +85,8 @@ if args.mode == "tester":
     system.tester.port = target_port
 else:
     system.membus = SystemXBar()
+    system.metrics_marker = MetricsMarker(trace_dir=out)
+    system.metrics_marker.pio = system.membus.mem_side_ports
     system.host_mem.port = system.membus.mem_side_ports
     system.membus.mem_side_ports = target_port
     system.cpu = X86TimingSimpleCPU()
@@ -99,11 +103,15 @@ else:
     system.cpu.createThreads()
 
 root = Root(full_system=False, systemc_kernel=SystemC_Kernel(system=system))
+metrics_context = install_metrics(out, args)
 m5.instantiate()
 if args.mode == "cpu":
     process.map(base, base, 8192, cacheable=False)
+    process.map(0x70000000, 0x70000000, 4096, cacheable=False)
 event = m5.simulate(args.max_ticks)  # Default 10 ms simulated, finite watchdog
 system.axi.finish()
+metrics_context.update(end_tick_fs=m5.curTick(), exit_cause=event.getCause(), exit_code=event.getCode(),
+                       completed=event.getCode() == 0 and (event.getCause() == "AXI packet/data/retry tests passed" if args.mode == "tester" else "exiting with last active thread context" in event.getCause()))
 print("EXIT:", event.getCause(), "code", event.getCode(), "tick", m5.curTick())
 if args.mode == "tester":
     if event.getCause() != "AXI packet/data/retry tests passed":

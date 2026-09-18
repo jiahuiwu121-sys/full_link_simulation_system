@@ -3,6 +3,7 @@
 #include "systemc/tlm_bridge/gem5_to_tlm.hh"
 #include "systemc/utils/tracefile.hh"
 #include "sim/core.hh"
+#include "sim/system.hh"
 #include <stdexcept>
 
 namespace storage_axi {
@@ -16,6 +17,7 @@ Demo::Demo(sc_module_name n, const gem5::AxiDemoParams& p)
       wrapper(master.socket, std::string(name()) + ".tlm", gem5::InvalidPortID),
       events(p.trace_dir + "/axi_events.csv"), directory(p.trace_dir) {
     if (!events) throw std::runtime_error("cannot open AXI trace");
+    master.requestorName = [system = p.system](uint32_t id) { return system->getRequestorName(id); };
     master.clk(clock); master.resetn(resetn); master.axi.bind(wires);
     if (p.memory_backend != "memsim" && p.memory_backend != "ramulator2" && p.size > UINT32_MAX)
         throw std::invalid_argument("test RAM size exceeds 32-bit limit");
@@ -49,6 +51,7 @@ Demo::Demo(sc_module_name n, const gem5::AxiDemoParams& p)
             a->hasSubstream = pkt->req->hasSubstreamId();
             a->substream = a->hasSubstream ? pkt->req->substreamId() : 0;
             a->payloadDelay = pkt->payloadDelay;
+            a->packetId = pkt->id;
             if (pkt->isAtomicOp() || pkt->isLLSC() || pkt->isLockedRMW() ||
                 pkt->req->isSwap() || pkt->req->isCacheMaintenance())
                 gp.set_command(tlm::TLM_IGNORE_COMMAND);
@@ -96,6 +99,7 @@ void Demo::sample() {
     ++cycle;
     sc_assert(sc_time_stamp().value() == gem5::curTick());
     if (!resetn.read()) return;
+    ++measuredCycles;
     auto& w = wires;
     channel("AW", w.awvalid, w.awready, {Data(w.awid.read()), Data(w.awaddr.read()), Data(w.awlen.read()), Data(w.awsize.read()), Data(w.awburst.read())});
     channel("W", w.wvalid, w.wready, {w.wdata.read(), Data(w.wstrb.read()), Data(w.wlast.read())});
@@ -127,7 +131,8 @@ void Demo::finish() {
       << ",\"max_outstanding\":" << master.maxActive << ",\"drained\":"
       << (master.idle() ? "true" : "false") << ",\"ticks_per_second\":"
       << gem5::sim_clock::Frequency << ",\"period_ticks\":" << clock.period().value()
-      << ",\"axi_data_bits\":" << DataBits << ",\"channels\":{";
+      << ",\"axi_data_bits\":" << DataBits << ",\"measured_cycles\":" << measuredCycles
+      << ",\"simulation_end_tick_fs\":" << gem5::curTick() << ",\"channels\":{";
     bool first = true;
     for (auto n : {"AW", "W", "B", "AR", "R"}) {
         if (!first) f << ',';

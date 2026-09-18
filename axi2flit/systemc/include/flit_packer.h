@@ -48,6 +48,11 @@ public:
     // 统计：累计发出的 Flit 数与已使用粒度数（testbench 计算链路占用率用）
     unsigned long flits_sent()      const { return flits_sent_; }
     unsigned long granules_sent()   const { return granules_sent_; }
+    const CreditMatrix& available_credits() const { return credits_.available(); }
+    bool credit_blocked(unsigned rp, unsigned kind) const {
+        const auto& slot = kind == 0 ? staged_wreq_[rp] : kind == 1 ? staged_rreq_[rp] : staged_wdata_[rp];
+        return slot && !credits_.can_consume(static_cast<uint8_t>(rp), slot->type, slot->granules);
+    }
 
 private:
     struct Candidate {
