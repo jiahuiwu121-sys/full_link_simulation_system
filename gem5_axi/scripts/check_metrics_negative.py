@@ -21,6 +21,8 @@ def negative(directory):
     source=Path(directory).resolve();check(source)
     def yaml_counter(d):
         p=d/'ramulator_stats.yaml';s=p.read_text();s=s.replace('      row_hits: ','      row_hits: 999',1);p.write_text(s)
+    def diagnostic_edit(d, edit):
+        p=d/'link_diagnostics.json';v=json.loads(p.read_text());edit(v);p.write_text(json.dumps(v))
     tests={
         'missing_child_mapping':lambda d:mutate_csv(d,'request_map.csv',lambda r:r.pop()),
         'wrong_uid':lambda d:mutate_csv(d,'request_map.csv',lambda r:r[0].update(uid='9999999')),
@@ -29,6 +31,12 @@ def negative(directory):
         'missing_power_interval':lambda d:mutate_csv(d,'power_intervals.csv',lambda r:r.pop()),
         'wrong_histogram_samples':lambda d:mutate_csv(d,'latency_hist.csv',lambda r:r[0].update(count=str(int(r[0]['count'])+1))),
     }
+    if (source/'link_diagnostics.json').exists():
+        tests.update({
+            'wrong_link_capacity':lambda d:diagnostic_edit(d,lambda v:v['resources'][0].update(peak_Bps=1)),
+            'missing_bandwidth_bin':lambda d:diagnostic_edit(d,lambda v:v['timebins'].pop()),
+            'wrong_partition_duration':lambda d:mutate_csv(d,'request_latency_partition.csv',lambda r:r[0].update(dram_data_service='0')),
+        })
     result={}
     for name,edit in tests.items():
         with tempfile.TemporaryDirectory(prefix='ss-metrics-negative-') as tmp:

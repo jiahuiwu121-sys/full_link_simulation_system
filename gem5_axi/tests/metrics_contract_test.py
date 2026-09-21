@@ -39,6 +39,14 @@ class MetricsContract(unittest.TestCase):
             self.assertIsNone(r['overall']['dram_energy_j'])
             self.assertIsNone(r['overall']['system_total_energy_j'])
             self.assertEqual(len(list((d/'metrics').glob('*.json'))),14)
+            diagnostic=json.loads((d/'link_diagnostics.json').read_text())
+            full=diagnostic['windows'][0]
+            self.assertEqual(full['inflight']['request_time_integral_fs'],28)
+            self.assertEqual(full['inflight']['peak'],1)
+            self.assertEqual(sum(b['resources']['TLM effective R']['bytes'] for b in diagnostic['timebins']),4)
+            self.assertEqual(sum(b['resources']['TLM effective W']['bytes'] for b in diagnostic['timebins']),2)
+            self.assertIsNone(next(x for x in diagnostic['resources'] if x['name']=='TLM effective R')['peak_Bps'])
+            self.assertEqual(diagnostic['critical_child_partition']['samples'],0)
 
     def test_missing_source_is_invalid_not_successful(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -63,6 +71,14 @@ class MetricsContract(unittest.TestCase):
         d=distribution([])
         self.assertEqual(d['count'],0)
         self.assertIsNone(d['mean_fs']);self.assertIsNone(d['p99_fs'])
+
+    def test_invalid_bandwidth_bin_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d=Path(tmp);self.fixture(d)
+            context=json.loads((d/'metrics_run.json').read_text());context['bandwidth_bin_ns']=0
+            (d/'metrics_run.json').write_text(json.dumps(context))
+            with self.assertRaisesRegex(ValueError,'SS_METRICS_BIN_NS'):
+                collect(d)
 
 
 if __name__=='__main__':unittest.main()

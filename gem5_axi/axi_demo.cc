@@ -88,6 +88,8 @@ void Demo::channel(const std::string& n, bool valid, bool ready,
     if (valid && !ready) { held[n] = payload; ++stalled[n]; }
     else held.erase(n);
     if (valid && ready) ++handshakes[n];
+    if (!valid && ready) ++readyIdle[n];
+    if (!valid && !ready) ++blockedIdle[n];
 }
 void Demo::row(const char* n, uint64_t id, uint64_t a, unsigned len,
                unsigned size, Data d, unsigned strb, bool last, unsigned resp) {
@@ -99,7 +101,9 @@ void Demo::sample() {
     ++cycle;
     sc_assert(sc_time_stamp().value() == gem5::curTick());
     if (!resetn.read()) return;
+    if (!measuredCycles) firstMeasuredTick = sc_time_stamp().value();
     ++measuredCycles;
+    lastMeasuredTick = sc_time_stamp().value();
     auto& w = wires;
     channel("AW", w.awvalid, w.awready, {Data(w.awid.read()), Data(w.awaddr.read()), Data(w.awlen.read()), Data(w.awsize.read()), Data(w.awburst.read())});
     channel("W", w.wvalid, w.wready, {w.wdata.read(), Data(w.wstrb.read()), Data(w.wlast.read())});
@@ -132,13 +136,17 @@ void Demo::finish() {
       << (master.idle() ? "true" : "false") << ",\"ticks_per_second\":"
       << gem5::sim_clock::Frequency << ",\"period_ticks\":" << clock.period().value()
       << ",\"axi_data_bits\":" << DataBits << ",\"measured_cycles\":" << measuredCycles
+      << ",\"first_measured_tick_fs\":" << firstMeasuredTick
+      << ",\"last_measured_tick_fs\":" << lastMeasuredTick
       << ",\"simulation_end_tick_fs\":" << gem5::curTick() << ",\"channels\":{";
     bool first = true;
     for (auto n : {"AW", "W", "B", "AR", "R"}) {
         if (!first) f << ',';
         first = false;
         f << '"' << n << "\":{\"handshakes\":" << handshakes[n]
-          << ",\"stall_cycles\":" << stalled[n] << '}';
+          << ",\"stall_cycles\":" << stalled[n]
+          << ",\"ready_idle_cycles\":" << readyIdle[n]
+          << ",\"blocked_idle_cycles\":" << blockedIdle[n] << '}';
     }
     f << "}}\n";
 }

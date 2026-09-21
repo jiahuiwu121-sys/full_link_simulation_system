@@ -23,6 +23,18 @@ bash env/run_xpu.sh results/my-xpu-experiment
 
 两个验收入口都执行 `check_metrics.py`，并在批次目录生成 `metrics_batch.json` / `metrics_batch.md`。批次中的用例是不同实验，各自时间、能量与带宽不能相加。原来的 `summary.json` 和校验门槛保留。
 
+两个入口未指定目录时，统一按 `results/YYYYMMDD-实验名-rNN/` 保存。日期使用 UTC；实验名默认 `baseline`，同一天、同一实验名的序号从已有最大序号递增，两个入口共享序号。目录创建会检查占用，避免并发运行覆盖。失败的运行也保留目录并占用序号。已有历史结果不改名。
+
+```bash
+bash env/run_ramulator.sh                         # 例如20260918-baseline-r01
+bash env/run_ramulator.sh                         # 例如20260918-baseline-r02
+SS_EXPERIMENT_LABEL=xpu-baseline bash env/run_xpu.sh
+# 手动指定目录仍然支持，目录必须尚不存在：
+bash env/run_ramulator.sh results/20260918-baseline-r03
+```
+
+`SS_EXPERIMENT_LABEL` 只设置批次名称，不改变模拟参数。完整验收批次内仍包含各自的浅队列、慢DRAM等用例。单独进行参数实验时，可在直接调用gem5的命令中使用 `-d results/20260918-queue1-r01` 并同时设置 `--ramulator-queue 1`，或使用 `-d results/20260918-dram-scale4-r01` 并同时设置 `--ramulator-scale 4`；目录名称不能替代实际配置记录。
+
 直接执行 gem5 配置也会自动生成指标，例如：
 
 ```bash
@@ -36,6 +48,25 @@ source env/activate.sh
 `--metrics-sample-cycles` 默认为 1000 个**原生 DRAM tick**，只控制原生队列/功耗时间序列的采样间隔，不改变精确逐周期队列积分与阻塞计数。开始和结束点始终输出。自定义 `--ramulator-config` 时，采样间隔由其根节点 `integration_statistics.sample_cycles` 决定（未设置则为 1000），命令行间隔不会重写自定义配置。缩小间隔可降低窗口边界估计误差，但增加采样和存储成本。
 
 ## 每个用例的输出
+
+运行结束后自动生成在线图表，支持CPU、GPU、NPU单用例和三源联合运行。两个gem5配置的退出收集器先保存指标，再在独立Python进程中进行离线校验和页面生成；批次脚本复用既有校验流程，整批结束后打开批次页面。后处理不推进仿真时间，不修改原始波形、Flit、命令、数据和功耗证据。
+
+页面入口为：`results/index.html`（全部已有指标结果）、本次目录的 `index.html`（用例选择及全程指标对比）、每个用例的 `metrics.html`（指标卡片、各channel功率、队列、延迟、命令分布、窗口、模块报告）。旧结果可以执行 `python3 env/publish_results.py <结果目录> --skip-views` 补生成页面。总索引包含尚未独立校验或不完整的结果，并明确显示状态，不能将其混入有效实验。
+
+单用例自动执行数据、AoU、Flit、DRAM和统计校验并生成链路及DRAM视图；执行日志为 `visualization.log`，成功记录为 `visualization_status.json`，后处理错误记录为 `visualization_error.json`。`visualization_data.json`、`dashboard.js`、`dashboard.css` 为页面配套资源；单用例索引使用 `run_index_data.json`，避免覆盖图表数据。
+
+功率和队列图每条曲线最多均匀保留1000个采样点并保留首尾，可能遗漏采样点之间的瞬时峰值。新增带宽曲线采用完整时间区间聚合，不抽点：默认请求100ns区间，长运行自动放大到不超过1000个区间，区间内全部字节和占用时间均保留。窗口边界能量仍按已有采样插值口径显示。不同用例的时间、能量、吞吐和利用率不会相加。
+
+默认自动启动/复用HTTP服务并打开浏览器。`SS_VISUALIZATION_OPEN=0` 可关闭自动打开而保留页面生成及服务；`SS_VIEW_PORT=8001` 可更换服务端口。浏览器或端口错误记录为 `visualization_server_error.json`，已生成的指标不会丢失。默认仅监听127.0.0.1，VS Code容器/远程环境使用浏览器桥接和端口转发。此功能是在每次运行结束后在线查看，不提供运行中实时曲线。直接调用gem5并输出到项目results之外时仍生成页面，自动HTTP查看限于项目results目录。
+
+在VS Code Dev Container或远程环境中，浏览器与模拟器的localhost可能不同。推荐使用查看入口自动启动/复用HTTP服务，并通过环境的浏览器桥接打开报告：
+
+```bash
+python3 env/view_results.py results/20260918-cpu-baseline-r01/cpu
+# 不传路径时打开results目录；端口占用时可指定--port 8001
+```
+
+服务仅监听容器/远程环境的127.0.0.1；VS Code负责端口转发。新启动的服务与查看命令分离，日志保存在 `build/results-view/http-端口.log`。工作区已配置8000端口的自动转发与浏览器打开。查看入口不修改实验数据。
 
 | 文件 | 内容 |
 |---|---|
@@ -61,6 +92,11 @@ source env/activate.sh
 | `request_flit_map.csv` / `axi_flit_path.csv` / `aou_messages.csv` | UID与原Packet → AXI握手 → AoU消息 → 双向Flit序号区间及两端时间；同一Flit可包含不同请求 |
 | `metrics_events.csv` | 带UID/来源的TLM与后端阶段事件，时间升序 |
 | `latency_summary.csv` / `latency_hist.csv` | 按源、读写、阶段的样本数、均值、P50/P95/P99/最大值及2的幂次区间直方图 |
+| `link_diagnostics.json` | 各段容量来源、各窗口带宽/利用率、在途请求、固定时间分箱、按大小延迟、CDF、阻塞及统计边界 |
+| `bandwidth_timeseries.csv` | 每个完整时间区间内各资源的交付字节、带宽、占用率、占用时间和事件带宽/峰值比 |
+| `request_latency_partition.csv` | 每个UID沿最后完成DRAM子请求构造的互斥全延迟分段；各段之和严格等于该TLM请求总延迟 |
+| `protocol_latency_samples.csv` | AXI首拍/完成/传输/写响应以及UCIe已记录发送到交付的逐样本延迟 |
+| `dram_data_bursts.csv` | 由实际RD/WR命令、CL/CWL、nBL及原生周期解析的每个DRAM数据总线占用区间 |
 | `backend_queue_metrics.json` / `fabric_metrics.json` | 精确周期采样的队列积分、采样峰值、阻塞周期、credit及原生UCIe计数 |
 | `ramulator_queue_metrics.json` | 每channel读/写/维护/active/pending-read队列的逐周期积分、峰值、非空周期 |
 | `ramulator_timeseries.csv` | 每channel周期性队列状态和同一DRAMPower实例的累计分项能量 |
@@ -84,6 +120,25 @@ source env/activate.sh
 - backing读字节是实际服务的字节，可能包含TLM屏蔽的读byte；写字节按SERVICE中来自WSTRB的mask统计。统计代码不维护第二份数据。
 - 吞吐默认有效B/s，原生 `*_throughput_MBps` 仍为原有十进制MB/s。全程吞吐与目标活动/任务/kernel区间吞吐分别输出，不混用分母。
 - 延迟分位数采用最近秩（nearest rank），每组带样本数。没有样本时分位数与均值为null，少量请求的P99不能作为稳定尾延迟结论。
+
+### 带宽和利用率
+
+页面把“交付事件带宽”“接口占用率”和“数据效率”分开。交付事件带宽是某层在统计窗口内记录的字节除以窗口时间；接口占用率使用该接口自身的容量/时钟口径；数据效率表示已经占用的数据槽或Flit空间中有多少是成功有效数据。三者不能互相替代。
+
+- AXI W/R分别使用256bit数据宽度和实际AXI周期计算单方向峰值；利用率为复位释放后该窗口的成功握手数除以时钟机会数。AW/AR/B只报告状态与握手，不冒充256bit数据带宽。四种状态 `VALID&&READY`、`VALID&&!READY`、`!VALID&&READY`、`!VALID&&!READY` 的周期数必须守恒。
+- UCIe FWD/REV分别使用运行时导出的lane/速率/调制、256B物理帧和SystemC量化后的序列化时间计算容量。利用率是TX_FRAME序列化区间的并集占比，包含重放占用，不把传播延迟算成发送总线占用，也不把RX字节重复累计。
+- 当前HBM3/HBM4按实际模型导出的transaction bytes、`nBL`、原生周期和PseudoChannel数计算每条数据总线及controller容量。利用率按实际RD/WR命令加CL/CWL后的数据突发区间并集计算；跨伪通道以独立总线容量归一化。其他DRAM类型如果没有已验证的总线容量推导，峰值和利用率保持null。
+- TLM按读写及来源输出成功有效字节速率，但没有脱离工作负载的单一峰值，因此不输出伪造的TLM利用率。全链路也不把各层百分比取平均；瓶颈要结合每层占用、背压、在途请求和数据效率判断。
+
+`SS_METRICS_BIN_NS` 可在运行前指定带宽曲线期望分箱宽度，默认100ns，必须为有限正数。为限制报告大小，实际宽度为请求值与“全程/1000”中的较大者；每个区间重新聚合完整事件，不对已有曲线抽样。时间分箱使用左闭右开区间，最后一个仿真tick只计一次；命名窗口中的TLM完成事件沿用原统计的闭合END_RESP边界，以包含定义 `target_activity` 终点的请求。很短区间的“事件带宽/峰值比”可能因事件记账落在边界而超过1，接口利用率仍由占用区间或时钟机会计算并限制在0到1。
+
+### 延迟分解
+
+AXI协议延迟区分AR到首个R、AR到最后R、首R到末R，以及AW和全部W都已接收后到B。UCIe的 `logged_fdi_delivery` 从链路模型记录的首次发送到RX_FDI交付，包含重放后的完成等待；TX_FDI日志已经是发送端取出数据的时刻，因此不包含此前适配FIFO排队。
+
+后端延迟分解为每个父UID选择最后完成SERVICE的DRAM子请求，形成从BEGIN_REQ到END_RESP互不重叠的八段。这样，同组各阶段的**平均值**可以相加并恢复平均总延迟；前缀/返回段仍包含其他AXI分段及并行子请求，不能称为纯UCIe时间。各阶段来自不同请求的P95/P99不能相加。未关联到DRAM子请求的错误请求不进入这张分解表，但仍保留在TLM全延迟统计中。
+
+刷新阻塞时间、读写切换的纯等待时间和按UID归因的阻塞原因当前没有足够事件证据，页面明确列为未统计。刷新命令数量不会被当成刷新阻塞时间，全局阻塞计数也不会被强行归因给某个长尾请求。
 
 ### 队列与阻塞
 
@@ -126,7 +181,7 @@ python3 ramulator2/integration/check_metrics_sampling.py <在线库.so> <新采�
 python3 env/summarize_metrics.py <批次目录>
 ```
 
-独立检查重算有效字节/延迟、UID与原请求对应关系、子事务因果、原生YAML/JSON数值、队列积分约束、阻塞口径、功耗区间守恒及关闭语义。`metrics.json` 的一致性检查与原有离线字节/DRAM时序校验互补，不能代替它们。
+独立检查重算有效字节/延迟、UID与原请求对应关系、子事务因果、原生YAML/JSON数值、队列积分约束、阻塞口径、功耗区间守恒及关闭语义；同时检查带宽分箱字节守恒、运行时容量来源、AXI四状态周期守恒、利用率范围和每个UID互斥延迟分段。负向检查还会篡改链路容量、删除带宽分箱、破坏延迟分段，要求全部被拒绝。`metrics.json` 的一致性检查与原有离线字节/DRAM时序校验互补，不能代替它们。
 
 ## 2026-09-18 本机验证
 
@@ -142,5 +197,16 @@ python3 env/summarize_metrics.py <批次目录>
 慢配置保持同一计算并产生真实延迟反馈：CPU完成时间增加14.662us；三源NPU周期4908→7067、GPU周期626→1214、Host完成增加160.701us。新任务标记及Host编译使启动相位不同，不能把本批次的设备周期与2026-09-17批次混作同一运行。
 
 这些是本机功能/统计契约验收，不是硬件绝对性能/功耗校准或多种子统计显著性结论。运行结果不提交Git；报告入口是各用例的metrics.html和批次metrics_batch.md。
+
+## 2026-09-21 带宽与延迟诊断验收
+
+- `results/20260918-bandwidth-latency-r01`：定向/replay/浅队列/响应保持/3ns AXI/关闭功耗/CPU/CPU慢内存共8组通过；最终派生统计重新收集后，9种统计篡改全部被拒绝。
+- `results/20260921-bandwidth-latency-xpu-r01`：NPU、GPU、三源、三源慢内存共4组通过，包含设备计算、数据、Flit、DRAM命令时序、HetTrace、AXI五通道VCD、带宽分箱及延迟分解检查。
+- `results/20260921-bandwidth-final-smoke-r01`：用最终代码从gem5退出收集器自动执行后处理、独立校验和页面生成，17个定向请求全部通过。
+- 6项统计契约单测、Python编译、shell/JavaScript语法、Git差异检查通过；真实Chromium页面验证覆盖利用率表/曲线、延迟CDF、关键请求分解、阻塞表、批次P99对比，以及三源CPU/GPU/NPU筛选，未出现JavaScript错误。
+
+定向用例的AXI写/读占用率约18.35%/16.99%，UCIe正向/反向序列化占用率约72.37%/80.07%，说明小请求封包及返回流量会使物理链路占用显著高于AXI有效数据槽。CPU正确性用例只有480B成功有效数据，其AXI写/读占用率约0.478%/0.360%，不能用于推断系统饱和带宽。这些数值是本项目当前模型和工作负载的功能验收结果，不是硬件标称性能。
+
+在线可视化改造另在 `results/20260918-visualization-{directed,cpu,npu,gpu,three}-r01/` 验证了退出后自动校验、三类页面、HTTP服务和索引生成；完整八组入口位于 `results/20260918-visualization-memory-batch-r01/`，验收通过。CPU与原基准的请求、AXI、两端Flit、后端事件、DRAM命令、最终数据、原生统计及功耗共9项原始输出逐字节一致。无头浏览器验证了图表、队列/模块切换、批次对比、搜索、功耗关闭、总索引，以及三源Flit交互和DRAM分页，无JavaScript错误。浏览器验收工具及依赖只放在build目录，页面运行不依赖这些工具或外部CDN。
 
 公开文献依据与更广的实验设计见 [指标与文献](code-reading/11-experiment-metrics-and-literature.md)。该研究文档列出的硬件校准、完整设备等待状态、连续稳态负载、多种子置信区间等是后续实验工作，不把未实现项记录为测量值。

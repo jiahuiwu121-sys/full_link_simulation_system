@@ -337,7 +337,11 @@ void AouBackend::finish(const std::string& dir) {
       << ",\"crc_errors\":" << s.stats.forward.crc_fail_count+s.stats.reverse.crc_fail_count
       << ",\"order_violations\":" << s.bridge.order_violations() << "}\n";
     std::ofstream m(dir + "/fabric_metrics.json");
-    m << "{\"cycles\":" << s.metrics_cycles << ",\"includes_reset\":true,\"fifo_queues\":{";
+    m << "{\"cycles\":" << s.metrics_cycles << ",\"includes_reset\":true,\"link_config\":{"
+      << "\"lanes\":" << s.cfg.num_lanes << ",\"rate_gtps\":" << s.cfg.lane_rate_gtps
+      << ",\"bits_per_symbol\":" << s.cfg.bits_per_ui() << ",\"ui_fs\":" << sc_time(s.cfg.ui_fs(), SC_FS).value()
+      << ",\"serialize_ui\":" << s.cfg.serialize_ui() << ",\"frame_bytes\":" << s.cfg.flit_bytes()
+      << "},\"fifo_queues\":{";
     const char* fifo_names[] = {"soc_tx", "soc_rx", "mem_tx", "mem_rx", "target_requests", "target_responses"};
     for (unsigned i = 0; i < 6; ++i) {
         if (i) m << ',';

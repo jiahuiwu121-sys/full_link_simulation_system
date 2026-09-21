@@ -13,9 +13,12 @@ import csv
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 import sys
+import subprocess
+import shutil
 
 SCHEMA = 'storagestacked.metrics.v1'
 COLLECTOR_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
@@ -113,7 +116,8 @@ def install(directory, args):
     """Register BEFORE the first m5.simulate (its exit handlers use LIFO)."""
     d = Path(directory)
     context = dict(schema=SCHEMA, arguments=vars(args), completed=False,
-                   exit_cause=None, exit_code=None, end_tick_fs=None)
+                   exit_cause=None, exit_code=None, end_tick_fs=None,
+                   bandwidth_bin_ns=float(os.environ.get('SS_METRICS_BIN_NS', '100')))
     save(d / 'metrics_run.json', context)
 
     def finish():
@@ -124,16 +128,27 @@ def install(directory, args):
             report = collect(d)
             if report['status'] == 'invalid':
                 raise ValueError('Metric consistency checks failed: ' + str(report['overall']['metric_consistency_checks']))
-            print('METRICS:', d / 'metrics.json', 'status=' + report['status'])
+            print('METRICS:', d / 'metrics.json', 'status=' + report['status'], flush=True)
         except Exception as exc:
             save(d / 'metrics_error.json', dict(error=str(exc), schema=SCHEMA))
             # A metrics failure must not leave a seemingly successful run.
             import traceback
-            import os
             traceback.print_exc()
             sys.stdout.flush()
             sys.stderr.flush()
             os._exit(1)
+        if os.environ.get('SS_VISUALIZATION_BATCH') != '1':
+            publisher = Path(__file__).resolve().parents[2] / 'env' / 'publish_results.py'
+            # Embedded gem5's sys.executable is not necessarily a Python executable.
+            python = os.environ.get('AXI_PYTHON') or shutil.which('python3')
+            try:
+                subprocess.run([python, str(publisher), str(d)], check=True)
+            except Exception as exc:
+                save(d/'visualization_error.json',dict(error=str(exc),log='visualization.log'))
+                print('可视化后处理失败：',exc,file=sys.stderr)
+                sys.stdout.flush()
+                sys.stderr.flush()
+                os._exit(1)
     atexit.register(finish)
     return context
 
@@ -584,6 +599,32 @@ def collect(directory):
             accounting='Requests counted at END_RESP; windows overlap and MUST NOT be summed'))
         for value in overall['window_statistics'][-1]['sources'].values():
             value['completion_accounted_effective_bandwidth_Bps'] = ratio(value['successful_enabled_bytes'],window_duration)
+    from link_metrics import analyze
+    diagnostics, partitions, protocol_samples, bursts = analyze(
+        txns, mappings, rows(d, 'axi_events.csv'), flits, commands, protocol, fabric,
+        load(d, 'ramulator_model.json', {}), native, modules['ramulator_backend'], windows, end,
+        context.get('bandwidth_bin_ns', 100))
+    checks['axi_latency_correlation'] = not diagnostics['protocol_errors']
+    checks['exclusive_latency_partition'] = all(sum(r[k] for k in diagnostics['critical_child_partition']['stages']) == r['total_fs'] for r in partitions)
+    checks['resource_utilization_bounds'] = all(v['utilization'] is None or 0 <= v['utilization'] <= 1+1e-12 for w in diagnostics['windows'] for v in w['resources'].values())
+    if complete and not all(checks.values()):
+        status = overall['status'] = 'invalid'
+    overall['link_diagnostics_file'] = 'link_diagnostics.json'
+    overall['link_resource_summary'] = diagnostics['windows'][0] if diagnostics['windows'] else None
+    modules['tlm']['inflight'] = overall['link_resource_summary']['inflight'] if overall['link_resource_summary'] else None
+    modules['axi']['peak_per_data_channel_Bps'] = ratio(protocol.get('axi_data_bits',256)/8,protocol.get('period_ticks',0)*1e-15)
+    modules['axi']['ready_idle_fractions'] = {ch:ratio(v['ready_idle_cycles'],cycles) if 'ready_idle_cycles' in v else None for ch,v in protocol.get('channels',{}).items()}
+    modules['axi']['blocked_idle_fractions'] = {ch:ratio(v['blocked_idle_cycles'],cycles) if 'blocked_idle_cycles' in v else None for ch,v in protocol.get('channels',{}).items()}
+    modules['ucie']['resolved_link_config'] = diagnostics['link_config']
+    if native:
+        modules['ramulator2']['data_bus_resources'] = [r for r in diagnostics['resources'] if r['name'].startswith('DRAM ')]
+    save(d/'link_diagnostics.json', diagnostics)
+    table(d/'request_latency_partition.csv',partitions,['uid','source','command','requested_bytes','token','burst','total_fs',*diagnostics['critical_child_partition']['stages']])
+    table(d/'protocol_latency_samples.csv',protocol_samples,['stage','command','axi_id','tick_fs','latency_fs'])
+    table(d/'dram_data_bursts.csv',bursts,['channel','pseudochannel','command','token','start_tick_fs','end_tick_fs','bytes'])
+    table(d/'bandwidth_timeseries.csv',
+          [dict(start_tick_fs=b['start_tick_fs'],end_tick_fs=b['end_tick_fs'],resource=name,**v) for b in diagnostics['timebins'] for name,v in b['resources'].items()],
+          ['start_tick_fs','end_tick_fs','resource','bytes','bandwidth_Bps','utilization','occupied_time_fs','event_rate_to_peak_ratio'])
     for name,value in modules.items():
         if name != 'dram_power':
             value['energy_j'] = None
@@ -628,11 +669,14 @@ def collect(directory):
     save(d/'metrics_manifest.json',dict(schema=SCHEMA,time_unit='fs',energy_unit='J',power_unit='W',
         collector_source_sha256=COLLECTOR_SHA256,
         quantiles='nearest rank',histogram='powers of two, half-open bins',arguments=context.get('arguments'),
+        bandwidth_bin_ns=context.get('bandwidth_bin_ns',100),
         evidence_sha256={str(p.relative_to(d)):file_sha256(p) for p in evidence},
         module_files={name:'metrics/'+name+'.json' for name in MODULES},
         notes=['Full-run DRAM totals retain native measurement duration. Target activity is a traffic window, not application ROI.',
                'Kernel/window energy boundaries between snapshots are interpolated estimates.',
                'Counters for different stall reasons can overlap; do not add them as exclusive execution time.',
+               'Bandwidth event bytes, interface busy time, and payload efficiency are separate metrics; per-resource utilization ratios must not be averaged.',
+               'Critical-child latency stages are exclusive for one UID; stage quantiles from different requests must not be added.',
                'Disabled or unmodeled energy is null; original native disabled-power zeros remain in original_statistics.']))
     text = ['# 全链路运行统计', '', f'状态：{status}；仿真时长 {duration:.9g} s；TLM 请求 {len(txns)}；有效字节 {effective}。', '',
             '| 部分 | 状态 | 独立报告 |','|---|---|---|']
@@ -642,34 +686,8 @@ def collect(directory):
              '本报告中的整体能耗只汇总 DRAM，其他模块尚无功耗模型。窗口功耗估计见 power_windows.csv；连续采样差分见 power_intervals.csv。', '',
              '原有原生统计、波形、Flit 日志与独立数据校验仍保留。统计一致性检查不代替独立数据/命令时序校验。']
     (d/'metrics_summary.md').write_text('\n'.join(text)+'\n')
-    # Small entry page; load only the selected module instead of raw traces.
-    html = '''<!doctype html><html lang="zh-CN"><meta charset="utf-8">
-<title>全链路实验统计</title><style>
-body{font:16px system-ui;margin:24px;max-width:1200px;color:#213047;background:#f7f9fc}
-select{padding:8px}pre{background:white;padding:16px;white-space:pre-wrap;overflow-wrap:anywhere}
-table{border-collapse:collapse;background:white}td,th{border:1px solid #dce2ed;padding:8px}
-</style><h1>全链路实验统计</h1>
-<p>__OPTIONAL_LINKS__
-<a href="metrics_manifest.json">统计口径与配置</a> · <a href="metrics.json">全部JSON</a> ·
-<a href="latency_summary.csv">延迟CSV</a> · <a href="power_windows.csv">窗口功耗CSV</a> ·
-<a href="power_intervals.csv">功耗曲线CSV</a> · <a href="queue_occupancy.csv">队列CSV</a></p>
-<p id="status">正在加载…</p><table><thead><tr><th>统计窗口</th><th>时间/s</th><th>完成请求</th><th>DRAM能量/J</th><th>DRAM平均功率/W</th><th>功耗边界方法</th></tr></thead><tbody id="windows"></tbody></table>
-<p>各设备/任务窗口可重叠；请分别比较。当前能量模型覆盖DRAM。窗口采样点之间的能量采用插值估计。</p>
-<label>独立报告 <select id="module"></select></label><pre id="details"></pre>
-<script>
-const names=__MODULES__,el=id=>document.getElementById(id),fmt=v=>v==null?'未测量/未启用':typeof v==='number'?Number(v.toPrecision(9)):v;
-for(const name of ['overall',...names]){const o=document.createElement('option');o.value=name;o.textContent=name;el('module').appendChild(o);}
-let sequence=0;
-async function show(){const n=++sequence;try{const r=await fetch('metrics/'+el('module').value+'.json');if(!r.ok)throw Error(r.status);const v=await r.json();if(n===sequence)el('details').textContent=JSON.stringify(v,null,2);}catch(e){el('details').textContent=e.message;}}
-fetch('metrics/overall.json').then(r=>r.json()).then(v=>{el('status').textContent='状态：'+v.status+'；请求 '+v.traffic.requests+'；有效字节 '+v.effective_bytes+'；时长 '+fmt(v.duration_seconds)+' s；任务ROI：'+v.application_roi_status;
-for(const w of v.window_statistics){const row=document.createElement('tr');for(const x of [w.name,w.duration_seconds,w.completed_target_traffic.requests,w.dram_energy_j,w.dram_average_power_w,w.power_boundary_method]){const cell=document.createElement('td');cell.textContent=fmt(x);row.appendChild(cell);}el('windows').appendChild(row);}})
-.catch(e=>{el('status').textContent='加载失败，请通过本机HTTP服务打开：'+e.message;});
-el('module').onchange=show;show();
-</script></html>'''.replace('__MODULES__',json.dumps(MODULES))
-    optional_links = [(name,label) for name,label in [('trace_view.html','AXI/UCIe日志与波形'),
-        ('ramulator.html','DRAM命令与数据'),('axi_wave.vcd','完整AXI波形'),('ramulator_commands.csv','DRAM命令CSV')] if (d/name).exists()]
-    html = html.replace('__OPTIONAL_LINKS__',''.join(f'<a href="{name}">{label}</a> · ' for name,label in optional_links))
-    (d/'metrics.html').write_text(html)
+    from visualization import write_dashboard
+    write_dashboard(d, report)
     return report
 
 

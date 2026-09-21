@@ -53,6 +53,8 @@ bash env/run_xpu.sh results/acceptance-xpu-ramulator2
 
 结果目录必须尚不存在。运行脚本显式关闭 GDB listener，保留 AXI 五通道 VCD、两端带时间戳的完整 raw Flit、数据检查及原生验收报告。`summary.json` 只有在整组验证成功后才生成。
 
+不提供结果目录时，两个当前入口自动使用 `results/YYYYMMDD-baseline-rNN/`（UTC日期，同日序号递增）；设置 `SS_EXPERIMENT_LABEL` 可更换批次实验名。名称不改变仿真配置，详细规则见[实验指标说明](experiment-metrics.md#运行)。
+
 `SS_MEMORY_BACKEND` 默认 `ramulator2`。历史 `memsim` 分支需要另行取得匹配源码，设置 `SS_MEMORY_BACKEND=memsim` 构建后才可选择；未构建或配置错误时失败，不自动退回 simple。`env/run.sh` 保留旧 RAM/simple 兼容验收，`env/run_memsim.sh` 是历史 memsim 专用入口。
 
 主工具链由 explicit lock 固定。原生模型用 C++20，gem5 通过 C ABI 调用；全系统只使用 gem5 原生 SystemC、主事件队列和 1fs。`env/ramulator-artifacts.lock.json` 固定 yaml-cpp 0.9.0、fmt 10.2.1、DRAMUtils 1.16.0 和 nlohmann_json 3.11.3 的源码压缩包 SHA256；bootstrap 准备缓存，build 不下载这些依赖。`SS_OFFLINE=1` 约束 bootstrap；Bazel 离线性需要单独确认。
@@ -88,6 +90,8 @@ XPU 配置默认选择 ramulator2。两种配置共用参数：
 默认 HBM4_32Gb_8Hi / HBM4_8000Mbps 配置使用 32B transaction、250ps 内部 tick、FRFCFSRowHit、Open row policy、HBM34PerBankRefresh、RoBaRaCoCh 和 CacheLineInterleave。单 controller 可映射 1GiB；运行时验证组织容量覆盖完整目标窗口。`run.py` 的定向/独立 CPU 后端窗口为 8KiB，bridge 的 16KiB 路由范围包含越界测试地址；`run_xpu.py` 未启用 GPU 时后端窗口为 768MiB，启用 GPU 时连同地址孔洞为 5.75GiB。
 
 自定义配置要完整展开，External 和 memory_system clock_ratio 必须为 1；当前嵌入能力要求 CacheLineInterleave、同容量/周期/transaction/数据延迟的 ControllerBase 控制器及有效 read/write_latency。自定义配置决定通道、功耗与时序，不叠加自动 scale/no-power/channels。原生库查询实际参数，不根据 preset 名称猜测容量和延迟。
+
+在线库同时把每个controller解析后的周期、transaction bytes、channel width及全部timing值写入 `ramulator_model.json`。带宽诊断只对已经验证的HBM3/HBM4伪通道使用 `transaction_bytes / (nBL × period)` 计算模型数据总线容量；元数据缺失或其他DRAM组织保持null，避免从preset名称或请求大小猜测峰值。
 
 当前嵌入 transaction 必须是 2 的幂，目标 base/size 必须按 transaction 对齐；不满足能力契约的其他标准配置会明确拒绝，需要单独适配映射与窗口。
 

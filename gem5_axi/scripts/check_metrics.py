@@ -52,6 +52,103 @@ def check(directory):
     for r in hist:
         grouped[r['stage'],r['source'],r['command']]+=int(r['count'])
     assert grouped==Counter({(r['stage'],r['source'],r['command']):int(r['count']) for r in summaries})
+    if (d/'link_diagnostics.json').exists():
+        diagnostic=read(d,'link_diagnostics.json')
+        full=next(w for w in diagnostic['windows'] if w['name']=='full_run')
+        assert full==overall['link_resource_summary']
+        old_windows={w['name']:w for w in overall['window_statistics']}
+        for w in diagnostic['windows']:
+            if w['name'] in old_windows:
+                expected=old_windows[w['name']]['completed_target_traffic']['successful_enabled_bytes']
+                assert w['resources']['TLM effective R']['bytes']+w['resources']['TLM effective W']['bytes']==expected
+        duration_fs=overall['simulation_end_tick_fs']
+        near(full['inflight']['request_time_integral_fs'],sum(values))
+        if duration_fs:
+            near(full['inflight']['time_weighted_mean'],sum(values)/duration_fs)
+        previous=0; sums=Counter()
+        for b in diagnostic['timebins']:
+            assert b['start_tick_fs']==previous and b['end_tick_fs']>previous
+            previous=b['end_tick_fs']
+            for name,v in b['resources'].items():
+                sums[name]+=v['bytes']
+                near(v['bandwidth_Bps'],v['bytes']/((b['end_tick_fs']-b['start_tick_fs'])*1e-15))
+                assert v['utilization'] is None or 0<=v['utilization']<=1+1e-12
+        assert previous==duration_fs and len(diagnostic['timebins'])<=1000
+        for r in diagnostic['resources']:
+            assert sums[r['name']]==full['resources'][r['name']]['bytes']
+            if r['peak_Bps'] is None:
+                assert full['resources'][r['name']]['utilization'] is None
+        expected_rw=Counter()
+        expected_size=Counter()
+        def request_source(name):
+            name=name.lower()
+            return 'gpu' if 'vortex' in name else 'npu' if 'coralnpu' in name else 'cpu' if 'cpu' in name else 'tester' if 'tester' in name else 'unknown'
+        for t in tx:
+            metadata_row=metadata[t['id'],t['begin_tick']]
+            src=request_source(metadata_row['source_name']); status=int(t['status'])
+            expected_size[src,t['command'],int(t['bytes']),status]+=1
+            if status==1:expected_rw[t['command']]+=int(metadata_row['enabled_bytes'])
+        assert full['resources']['TLM effective R']['bytes']==expected_rw['R']
+        assert full['resources']['TLM effective W']['bytes']==expected_rw['W']
+        assert Counter((r['source'],r['command'],int(r['requested_bytes']),int(r['status'])) for r in diagnostic['latency_by_size'] for _ in range(r['count']))==expected_size
+        for points in diagnostic['cdfs'].values():
+            assert points and all(a[0]<=b[0] and a[1]<=b[1] for a,b in zip(points,points[1:]))
+            near(points[-1][1],100)
+        protocol=read(d,'protocol_summary.json')
+        for ch,v in protocol['channels'].items():
+            if 'ready_idle_cycles' in v:
+                assert sum(v[k] for k in ('handshakes','stall_cycles','ready_idle_cycles','blocked_idle_cycles'))==protocol['measured_cycles']
+        for ch in ('W','R'):
+            r=next(r for r in diagnostic['resources'] if r['name']=='AXI '+ch)
+            near(r['peak_Bps'],protocol['axi_data_bits']/8/(protocol['period_ticks']*1e-15))
+            assert full['resources'][r['name']]['bytes']==protocol['channels'][ch]['handshakes']*protocol['axi_data_bits']//8
+            if protocol['measured_cycles']:
+                near(full['resources'][r['name']]['utilization'],protocol['channels'][ch]['handshakes']/protocol['measured_cycles'])
+        config=diagnostic['link_config']
+        if config:
+            fabric=read(d,'fabric_metrics.json')
+            assert config==fabric['link_config']
+            frames=rows(d,'ucie_flits.csv')
+            for direction in ('FWD','REV'):
+                r=next(r for r in diagnostic['resources'] if r['name']=='UCIe '+direction)
+                near(r['peak_Bps'],config['frame_bytes']/(config['serialize_ui']*config['ui_fs']*1e-15))
+                assert full['resources'][r['name']]['bytes']==sum(int(f['bytes']) for f in frames if f['direction']==direction and f['event']=='TX_FRAME')
+        stages=diagnostic['critical_child_partition']['stages']
+        partitions=rows(d,'request_latency_partition.csv')
+        bytoken={r['token']:r for r in rows(d,'request_map.csv')}
+        txuid={metadata[t['id'],t['begin_tick']]['uid']:t for t in tx}
+        latest={}
+        for m in bytoken.values():
+            uid=m['uid']
+            if uid not in latest or (int(m['service_tick_fs']),int(m['token']))>(int(latest[uid]['service_tick_fs']),int(latest[uid]['token'])):
+                latest[uid]=m
+        assert len(partitions)==len({r['uid'] for r in bytoken.values()})==diagnostic['critical_child_partition']['samples']
+        for r in partitions:
+            assert sum(int(r[k]) for k in stages)==int(r['total_fs'])
+            assert all(int(r[k])>=0 for k in stages)
+            m=bytoken[r['token']]
+            assert r['uid']==m['uid'] and r['burst']==m['burst'] and r['source']==m['source']
+            assert m==latest[r['uid']]
+            t=txuid[r['uid']]
+            assert int(r['total_fs'])==int(t['end_resp_tick'])-int(t['begin_tick'])
+            for k,a,b in [('backend_admission','parent_accept_tick_fs','submit_tick_fs'),
+                          ('dram_queue_and_schedule','submit_tick_fs','issued_tick_fs'),
+                          ('dram_data_service','issued_tick_fs','service_tick_fs'),
+                          ('backend_return_wait','service_tick_fs','parent_return_tick_fs')]:
+                assert int(r[k])==int(m[b])-int(m[a])
+        for g in diagnostic['critical_child_partition']['groups']:
+            own=[r for r in partitions if r['source']==g['source'] and r['command']==g['command']]
+            assert len(own)==g['count']
+            near(g['total']['mean_fs'],sum(int(r['total_fs']) for r in own)/len(own))
+            for k in stages:
+                near(g['stages'][k]['mean_fs'],sum(int(r[k]) for r in own)/len(own))
+        if (d/'ramulator_model.json').exists():
+            for channel,model in enumerate(read(d,'ramulator_model.json')['controllers']):
+                if model.get('standard') in ('HBM3','HBM4') and model.get('timings'):
+                    peak=model['transaction_bytes']/(model['period_fs']*model['timings']['nBL']*1e-15)
+                    for r in diagnostic['resources']:
+                        if r['name'].startswith(f'DRAM ch{channel}/pc'):
+                            near(r['peak_Bps'],peak)
     if (d/'ramulator_native_summary.json').exists():
         native=read(d,'ramulator_native_summary.json'); backend=read(d,'ramulator_backend_summary.json')
         native_stats=read(d,'ramulator_stats.json')
@@ -118,7 +215,8 @@ def check(directory):
         assert overall['system_total_energy_j'] is None
     result=dict(passed=True,transactions=len(tx),effective_bytes=effective,module_files=len(modules),
                 checks=['stable uid/source mapping','native statistics preserved','latency histogram sample conservation',
-                        'child causality','queue integrals','stall reason counts','power interval conservation','disabled power semantics'])
+                        'child causality','queue integrals','stall reason counts','power interval conservation','disabled power semantics',
+                        'bandwidth bin conservation','resolved interface capacities','AXI four-state conservation','exclusive request latency partition'])
     (d/'metrics_check.json').write_text(json.dumps(result,indent=2)+'\n')
     return result
 

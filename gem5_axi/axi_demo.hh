@@ -29,8 +29,9 @@ class Demo : public sc_core::sc_module {
     uint64_t cycle = 0;
     bool finished = false;
     uint64_t measuredCycles = 0;
+    uint64_t firstMeasuredTick = 0, lastMeasuredTick = 0;
     std::map<std::string, std::vector<Data>> held;
-    std::map<std::string, uint64_t> handshakes, stalled;
+    std::map<std::string, uint64_t> handshakes, stalled, readyIdle, blockedIdle;
     void reset();
     void sample();
     void channel(const std::string&, bool valid, bool ready,

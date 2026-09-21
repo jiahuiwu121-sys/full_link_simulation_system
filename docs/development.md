@@ -55,6 +55,10 @@ archive/*分支是原维护机器上的辅助历史入口，不要求新克隆�
 - env/record.py输出的*.patch是运行时差异快照，不是构建时对内部目录应用的补丁。
 - 指标收集/统计契约在gem5_axi/scripts/collect_metrics.py、check_metrics.py；原生采样在ramulator2/integration。
   每个模块独立输出及整体汇总、功耗窗口口径见[实验指标说明](experiment-metrics.md)。修改统计也要验证不改变命令序列与原有总值。
+- 在线图表数据/索引由gem5_axi/scripts/visualization.py生成，页面资源在visualization_assets。
+  带宽容量、占用时间、协议延迟和关键子请求互斥分解集中在gem5_axi/scripts/link_metrics.py；缺少已验证容量元数据时必须输出null，不从预设名称猜测。
+  env/publish_results.py负责运行结束后的离线校验和视图生成，env/view_results.py负责HTTP服务及VS Code浏览器桥接。
+  单用例由退出收集器触发；批次通过内部SS_VISUALIZATION_BATCH标记避免重复后处理，在已有验收完成后统一生成索引。
 
 迁移备份在本地integrate_doc/repository_migration_20260911，包括原Git bundle、
 工作区压缩包和每次pull日志。integrate_doc暂不进入主仓库；核心维护说明以本文件为准。

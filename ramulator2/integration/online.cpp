@@ -230,7 +230,17 @@ extern "C" ssr_memory* ssr_create(const char* path, uint32_t limit,
                 if (i) model << ',';
                 model << spec.organization.level_sizes[i];
             }
-            model << "],\"constraints\":[";
+            // Resolved timings describe this instance, including controlled
+            // clock scaling. Export evidence only; never change scheduling.
+            model << "],\"period_fs\":" << h->info.period_fs
+                  << ",\"transaction_bytes\":" << spec.get_tx_bytes()
+                  << ",\"channel_width_bits\":" << spec.channel_width
+                  << ",\"timings\":{";
+            for (int i = 0; i < spec.timing_count; ++i) {
+                if (i) model << ',';
+                model << '"' << spec.timing_names[i] << "\":" << spec.timing_vals[i];
+            }
+            model << "},\"constraints\":[";
             bool first = true;
             for (int level = 0; level < spec.level_count; ++level)
                 for (int preceding = 0; preceding < spec.command_count; ++preceding)

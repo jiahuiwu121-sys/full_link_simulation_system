@@ -2,11 +2,11 @@
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/activate.sh"
 export SS_RUN_XPU=1
+export SS_VISUALIZATION_BATCH=1
 export LD_LIBRARY_PATH="$SS_DEPS_ROOT/xpu-native/lib:$VORTEX_HOME/third_party/ramulator:$LD_LIBRARY_PATH"
-destination=${1:-"$SS_ROOT/results/xpu-$(date -u +%Y%m%dT%H%M%SZ)"}
-[[ ! -e "$destination" ]] || { echo "结果目录已存在：$destination" >&2; exit 1; }
-mkdir -p "$destination"
-destination=$(cd "$destination" && pwd)
+destination=$("$AXI_PYTHON" "$SS_ROOT/env/create_result_dir.py" "$SS_ROOT/results" \
+    ${1:+"$1"} --label "${SS_EXPERIMENT_LABEL:-baseline}")
+echo "结果目录：$destination"
 "$AXI_PYTHON" "$AXI_PROJECT_DIR/tests/metrics_contract_test.py" > "$destination/metrics-contract.log" 2>&1
 "$AXI_PYTHON" "$SS_ROOT/env/check_sources.py" --xpu
 "$AXI_PYTHON" "$SS_ROOT/env/record.py" "$destination/environment"
@@ -57,3 +57,4 @@ run_case three_slow --cmd "$HET_PROJECT_ROOT/workloads/three_source/build/host_m
 "$AXI_PYTHON" "$SS_ROOT/env/verify_xpu.py" "$destination"
 "$AXI_PYTHON" "$SS_ROOT/env/summarize_metrics.py" "$destination"
 echo "三源全链路验收通过：$destination/summary.json"
+"$AXI_PYTHON" "$SS_ROOT/env/publish_results.py" "$destination" --skip-views

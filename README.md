@@ -20,6 +20,8 @@ CPU / Vortex GPU / CoralNPU → 原生AXI256 → AXI2Flit → UCIe → 在线Ram
 
 每次运行自动输出各模块独立统计、全链路汇总、按源延迟分位数、请求关联和DRAM功耗时间序列；批次运行同时生成指标总索引。输出文件、原生指标兼容口径、任务/kernel窗口及功耗估计范围见[实验指标说明](docs/experiment-metrics.md)。
 
+每次运行结束后自动生成在线可视化：结果总索引 `results/index.html`、本次运行 `index.html` 和各用例 `metrics.html`，包含逐段带宽/利用率、延迟CDF与互斥分解、阻塞、功率、队列及DRAM命令图表。直接调用两个gem5配置的单用例也会自动完成链路/DRAM页面生成和独立统计校验。本地HTTP服务自动启动，VS Code容器环境通过浏览器桥接打开；设置 `SS_VISUALIZATION_OPEN=0` 可关闭自动打开浏览器，`SS_METRICS_BIN_NS` 可配置带宽曲线的期望时间分箱。
+
 2026-09-17 已完成在线替代后的构建与验收：八组 CPU/定向、四组 GPU/NPU、旧 RAM/simple 兼容链路均通过，包含真实数据、实际命令、DRAMPower 和独立 VCD 审计。[本机结果与时序反馈](docs/ramulator-integration.md#2026-09-17-本机验收)记录配置、报告位置及估算功耗边界。
 
 gem5和coralnpu已转为主仓库普通源码，直接打开gem5/src、coralnpu/hdl和coralnpu/hw_sim，

@@ -2,11 +2,12 @@
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/activate.sh"
 export SS_MEMORY_BACKEND=ramulator2
+export SS_VISUALIZATION_BATCH=1
 [[ -x "$AXI_GEM5_BIN" ]] || { echo '请先执行 bash env/build.sh' >&2; exit 1; }
-destination=${1:-"$SS_ROOT/results/ramulator2-$(date -u +%Y%m%dT%H%M%SZ)"}
-[[ ! -e "$destination" ]] || { echo "结果目录已存在：$destination" >&2; exit 1; }
-mkdir -p "$destination" "$AXI_PROJECT_DIR/build"
-destination=$(cd "$destination" && pwd)
+destination=$("$AXI_PYTHON" "$SS_ROOT/env/create_result_dir.py" "$SS_ROOT/results" \
+    ${1:+"$1"} --label "${SS_EXPERIMENT_LABEL:-baseline}")
+mkdir -p "$AXI_PROJECT_DIR/build"
+echo "结果目录：$destination"
 "$AXI_PYTHON" "$AXI_PROJECT_DIR/tests/metrics_contract_test.py" > "$destination/metrics-contract.log" 2>&1
 "$AXI_PYTHON" "$SS_ROOT/env/check_sources.py"
 "$AXI_PYTHON" "$SS_ROOT/env/record.py" "$destination/environment"
@@ -54,3 +55,4 @@ run_case cpu_slow --mode cpu --no-stalls --binary "$AXI_PROJECT_DIR/build/ramula
 "$AXI_PYTHON" "$SS_ROOT/env/verify_ramulator.py" "$destination"
 "$AXI_PYTHON" "$SS_ROOT/env/summarize_metrics.py" "$destination"
 echo "Ramulator2 全链路验收通过：$destination/summary.json"
+"$AXI_PYTHON" "$SS_ROOT/env/publish_results.py" "$destination" --skip-views
