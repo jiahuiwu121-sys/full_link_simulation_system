@@ -20,13 +20,16 @@ class AxiDemo(SystemC_ScModule):
     ramulator_config = Param.String('', 'Fully expanded External Ramulator2 config')
     ramulator_slots = Param.Unsigned(8, 'Bounded in-flight AXI bursts')
     ramulator_children = Param.Unsigned(32, 'Bounded native transactions')
+    ramulator_submit_width = Param.Unsigned(8, 'Maximum native child submissions per DRAM tick')
     ramulator_response_hold = Param.Unsigned(0, 'Response hold in DRAM ticks')
     memsim_channels = Param.Unsigned(2, 'HBM4 channel count for integration')
     memsim_scale = Param.Unsigned(1, 'Multiply native HBM clock period')
     memsim_queue = Param.Unsigned(4, 'Native ingress/controller/response capacity')
     memsim_slots = Param.Unsigned(8, 'Bounded in-flight AXI bursts')
     memsim_response_hold = Param.Unsigned(0, 'Stress-test response hold in memory ticks')
-    period = Param.Latency('2ns', 'AXI clock period')
+    # 32 B / 666667 fs = 47.999976 GB/s, matching the default 16 x 24 GT/s
+    # NRZ UCIe raw capacity (48 GB/s) to avoid an accidental AXI bottleneck.
+    period = Param.Latency('666667fs', 'AXI clock period')
     base = Param.Addr(0x90000000, 'RAM base')
     size = Param.UInt64(8192, 'Target memory window size in bytes')
     outstanding = Param.Unsigned(4, 'Bounded TLM transaction slots')
@@ -44,6 +47,16 @@ class AxiPacketTester(SimObject):
     base = Param.Addr(0x90000000, 'Target base')
     trace_dir = Param.String('', 'Result directory')
     response_hold = Param.Latency('7ns', 'Hold each response before retry')
+    traffic_mode = Param.String('validation', 'validation or bandwidth')
+    traffic_warmup_requests = Param.Unsigned(0, 'Completed requests excluded before measurement')
+    traffic_measure_requests = Param.Unsigned(0, 'Requests in the steady measurement window')
+    traffic_cooldown_requests = Param.Unsigned(0, 'Requests after measurement that preserve offered load while draining')
+    traffic_request_size = Param.Unsigned(256, 'Bytes per bandwidth request')
+    traffic_working_set = Param.UInt64(1024 * 1024, 'Bandwidth traffic address working set')
+    traffic_write_percent = Param.Percent(50, 'Bandwidth traffic write percentage')
+    traffic_max_inflight = Param.Unsigned(64, 'Maximum tester requests in flight')
+    traffic_issue_interval = Param.Latency('0ns', 'Minimum interval between generated requests; zero means saturation')
+    traffic_offered_load_percent = Param.Float(0.0, 'Requested payload load relative to the AXI data-channel peak')
 
 
 class MetricsMarker(BasicPioDevice):

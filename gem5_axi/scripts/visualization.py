@@ -96,6 +96,8 @@ def write_index(directory, results_root=False):
             except (OSError,ValueError,KeyError):
                 continue
             link_resources=overall.get('link_resource_summary',{}).get('resources',{}) if overall.get('link_resource_summary') else {}
+            steady=next((w for w in overall.get('window_statistics',[]) if w['name']=='traffic_steady_state'),None)
+            profile=overall.get('traffic_profile') or {}
             entries.append(dict(run=run.name,case=case.name,status=report['status'],checked=checked,
                 url=(case/'metrics.html').relative_to(d).as_posix(),
                 duration_seconds=overall['duration_seconds'],requests=overall['traffic']['requests'],
@@ -105,12 +107,21 @@ def write_index(directory, results_root=False):
                 axi_read_utilization=link_resources.get('AXI R',{}).get('utilization'),
                 ucie_forward_utilization=link_resources.get('UCIe FWD',{}).get('utilization'),
                 ucie_reverse_utilization=link_resources.get('UCIe REV',{}).get('utilization'),
+                offered_load_percent=profile.get('offered_load_percent'),
+                steady_bandwidth_Bps=(steady.get('measurement_cohort_effective_bandwidth_Bps',steady.get('completion_accounted_effective_bandwidth_Bps'))
+                                      if steady else None),
+                steady_p95_latency_ns=((steady.get('measurement_cohort_traffic') or steady['completed_target_traffic'])['latency']['p95_fs']/1e6
+                                       if steady and (steady.get('measurement_cohort_traffic') or steady['completed_target_traffic'])['latency']['p95_fs'] is not None else None),
                 p95_latency_ns=overall['latency']['p95_fs']/1e6 if overall['latency']['p95_fs'] is not None else None,
                 p99_latency_ns=overall['latency']['p99_fs']/1e6 if overall['latency']['p99_fs'] is not None else None))
-    write_json(d/'visualization_data.json' if results_root or not (d/'metrics.json').exists() else d/'run_index_data.json',dict(entries=entries))
+    sweep=json.loads((d/'bandwidth_sweep.json').read_text()) if (d/'bandwidth_sweep.json').exists() else None
+    write_json(d/'visualization_data.json' if results_root or not (d/'metrics.json').exists() else d/'run_index_data.json',
+               dict(entries=entries,sweep=sweep))
     links=[] if results_root else [('../index.html','全部运行')]
     if (d/'metrics_batch.md').exists():
         links.append(('metrics_batch.md','批次指标表'))
+    if (d/'bandwidth_sweep.md').exists():
+        links.append(('bandwidth_sweep.md','带宽压力扫描表'))
     page(d,'仿真实验结果索引' if results_root else '运行结果 · '+d.name,'index',links)
 
 

@@ -149,6 +149,14 @@ def check(directory):
                     for r in diagnostic['resources']:
                         if r['name'].startswith(f'DRAM ch{channel}/pc'):
                             near(r['peak_Bps'],peak)
+        backend_capacity=read(d,'ramulator_backend_summary.json') if (d/'ramulator_backend_summary.json').exists() else {}
+        native_capacity=read(d,'ramulator_native_summary.json') if (d/'ramulator_native_summary.json').exists() else {}
+        if native_capacity and backend_capacity.get('submit_width'):
+            ingress=next(r for r in diagnostic['resources'] if r['name']=='Backend ingress')
+            near(ingress['peak_Bps'],backend_capacity['submit_width']*native_capacity['transaction_bytes']/(native_capacity['period_fs']*1e-15))
+            balance=diagnostic['capacity_balance'];caps=balance['capacities_Bps']
+            near(caps['axi_per_direction'],protocol['axi_data_bits']/8/(protocol['period_ticks']*1e-15))
+            assert balance['status'] in ('balanced_ingress','unbalanced_or_unknown')
     if (d/'ramulator_native_summary.json').exists():
         native=read(d,'ramulator_native_summary.json'); backend=read(d,'ramulator_backend_summary.json')
         native_stats=read(d,'ramulator_stats.json')
@@ -191,7 +199,15 @@ def check(directory):
                 assert 0<=q['nonempty_cycles']<=queues['cycles']
         bq=read(d,'backend_queue_metrics.json'); stalls=bq['stall_cycles']
         assert stalls['forced_response_hold']+stalls['response_fifo_full']==backend['response_stalls']
-        assert stalls['child_limit']+stalls['native_reject']==backend['submit_stalls']
+        if 'submit_width' in backend:
+            assert stalls['native_reject_attempts']==backend['native_reject_attempts']
+            assert backend['submit_stalls']>=backend['native_reject_attempts']
+            assert stalls['native_reject']<=stalls['native_reject_attempts']
+            assert sum(bq['submit_batch_histogram'])==backend['submit_dispatch_cycles']
+            assert backend['max_submitted_per_tick']<=backend['submit_width']
+            assert sum(i*n for i,n in enumerate(bq['submit_batch_histogram']))==native['submitted']
+        else:
+            assert stalls['child_limit']+stalls['native_reject']==backend['submit_stalls']
         assert stalls['address_hazard']<=backend['hazard_stalls']
         assert bq['parent_peak']<=bq['parent_capacity'] and bq['child_peak']<=bq['child_capacity']
         power=read(d,'dram_power.json'); assert modules['dram_power']['original_statistics']==power

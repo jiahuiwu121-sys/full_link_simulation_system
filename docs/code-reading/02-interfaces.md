@@ -205,7 +205,7 @@ CPU 小配置 `run.py` 则使用 0..512MiB Host 主存、`0x90000000` 起 16KiB 
 | Host 2GHz | 500000 tick/cycle |
 | Vortex 1GHz | 1000000 tick/cycle |
 | CoralNPU 500MHz | 2000000 tick/cycle |
-| AXI 默认周期 | 2ns = 2000000 tick |
+| AXI 默认周期 | 666667fs = 666667 tick；AXI256单方向约47.999976GB/s |
 | UCIe UI | `10^6/rate_GTps` fs，24GT/s 约 41666.67fs，实际 sc_time 会量化 |
 | 内存周期 | `ss_mem_period_fs()`，由 scale 等参数决定 |
 

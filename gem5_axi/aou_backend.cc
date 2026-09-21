@@ -119,7 +119,8 @@ struct AouBackend::Fabric : sc_module {
         target.mem_req(requests); target.mem_rsp(responses);
         if (p.memory_backend == "ramulator2") {
             ramulator = std::make_unique<RamulatorBackend>("memory", p.base, p.size,
-                p.ramulator_slots, p.ramulator_children, p.ramulator_response_hold,
+                p.ramulator_slots, p.ramulator_children, p.ramulator_submit_width,
+                p.ramulator_response_hold,
                 p.ramulator_config, p.trace_dir);
             ramulator->request(requests); ramulator->response(responses);
 #ifdef SS_HAVE_MEMSIM

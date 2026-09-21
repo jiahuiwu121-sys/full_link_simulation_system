@@ -175,6 +175,18 @@ def analyze(txns, mappings, axi, flits, commands, protocol, fabric, models, nati
                  occupancy_method='union of TX_FRAME serialization intervals; excludes propagation',
                  replay_bytes=sum(int(r['bytes']) for r in frames if int(r['replay'])),
                  replay_byte_fraction=divide(sum(int(r['bytes']) for r in frames if int(r['replay'])),sum(n for _, n in events)))
+    backend_summary = backend.get('original_summary', {})
+    native_period = native.get('period_fs', 0)
+    transaction_bytes = native.get('transaction_bytes', 0)
+    submit_width = backend_summary.get('submit_width')
+    backend_peak = divide(submit_width * transaction_bytes, native_period * 1e-15) \
+        if submit_width and transaction_bytes and native_period else None
+    resource('Backend ingress',
+             [(int(m['submit_tick_fs']), transaction_bytes) for m in mappings],
+             peak=backend_peak,
+             method='submit_width * native transaction bytes / DRAM tick' if backend_peak is not None else None,
+             occupancy_method='accepted native child submissions / configured dispatch slots',
+             _slot_period_fs=native_period, _slot_width=submit_width)
     # Supported HBM bus organization: each pseudochannel owns a data bus.
     # Burst capacity is payload capacity of the simulated model, not pin metadata.
     buses = {}
@@ -211,6 +223,28 @@ def analyze(txns, mappings, axi, flits, commands, protocol, fabric, models, nati
                  _bus_keys=[(channel, pc) for pc in range(count)])
     if native and not models.get('controllers'):
         warnings.append('DRAM capacity unavailable: no resolved model manifest')
+    axi_peak = divide(lane, period*1e-15)
+    ucie_peak = divide(config.get('frame_bytes', 0), serial*1e-15)
+    dram_peaks = [r['peak_Bps'] for r in resources if r['name'].startswith('DRAM ch') and r['name'].endswith(' total')]
+    dram_peak = sum(dram_peaks) if dram_peaks and all(v is not None for v in dram_peaks) else None
+    ingress_known = all(v is not None for v in (axi_peak, ucie_peak, backend_peak, dram_peak))
+    ratio_axi_ucie = divide(axi_peak, ucie_peak)
+    capacity_balance = dict(
+        status=('balanced_ingress' if ingress_known and .8 <= ratio_axi_ucie <= 1.25 and
+                backend_peak >= min(axi_peak, ucie_peak) and dram_peak >= min(axi_peak, ucie_peak)
+                else 'unbalanced_or_unknown'),
+        bottleneck=min(((name, value) for name,value in [('AXI256 per direction',axi_peak),
+                       ('UCIe per direction',ucie_peak),('backend dispatch',backend_peak),
+                       ('aggregate DRAM data buses',dram_peak)] if value is not None),
+                       key=lambda x:x[1])[0] if any(v is not None for v in (axi_peak,ucie_peak,backend_peak,dram_peak)) else None,
+        capacities_Bps=dict(axi_per_direction=axi_peak,ucie_per_direction=ucie_peak,
+                            backend_dispatch=backend_peak,dram_aggregate=dram_peak),
+        ratios=dict(axi_to_ucie=ratio_axi_ucie,
+                    backend_headroom_over_link=divide(backend_peak,min(axi_peak,ucie_peak)) if axi_peak and ucie_peak else None,
+                    dram_headroom_over_link=divide(dram_peak,min(axi_peak,ucie_peak)) if axi_peak and ucie_peak else None),
+        policy='AXI and UCIe within 20%; backend and DRAM at least as fast as the slower ingress link')
+    if capacity_balance['status'] != 'balanced_ingress':
+        warnings.append('Ingress capacity is unbalanced or unresolved; use capacity_balance before interpreting saturation')
     first, last = protocol.get('first_measured_tick_fs'), protocol.get('last_measured_tick_fs')
     def opportunities(a, b):
         if first is None or last is None or not period:
@@ -233,6 +267,9 @@ def analyze(txns, mappings, axi, flits, commands, protocol, fabric, models, nati
             utilization = divide(right-left,cycles) if cycles is not None else None
             if a==0 and b==end:
                 utilization = divide(protocol.get('channels',{}).get(r['name'][-1],{}).get('handshakes',0),protocol.get('measured_cycles',0))
+            occupied = None
+        elif r['name'] == 'Backend ingress' and r.get('_slot_period_fs') and r.get('_slot_width'):
+            utilization = divide(right-left, (elapsed/r['_slot_period_fs'])*r['_slot_width'])
             occupied = None
         elif '_bus_keys' in r:
             busy = [buses[k]['_busy'].between(a,b) for k in r['_bus_keys']]
@@ -328,7 +365,7 @@ def analyze(txns, mappings, axi, flits, commands, protocol, fabric, models, nati
     public=[{k:v for k,v in r.items() if not k.startswith('_')} for r in resources]
     result=dict(schema='storagestacked.link_diagnostics.v1',resources=public,windows=window_rows,timebins=timebins,
         binning=dict(requested_bin_ns=bin_ns,effective_bin_fs=width,maximum_bins=1000,method='complete event aggregation and interval clipping; no point thinning'),
-        link_config=config,latency_by_size=size_latency,cdfs=cdfs,
+        link_config=config,capacity_balance=capacity_balance,latency_by_size=size_latency,cdfs=cdfs,
         protocol_latency={k:summary(v) for k,v in groups.items()},protocol_errors=axi_errors,
         critical_child_partition=dict(stages=names,samples=len(timeline),summary={k:summary([r[k] for r in timeline]) for k in names},
             groups=[dict(source=s,command=c,count=len(own),total=summary([r['total_fs'] for r in own]),
@@ -340,7 +377,7 @@ def analyze(txns, mappings, axi, flits, commands, protocol, fabric, models, nati
         stalls=stalls,warnings=warnings,
         unavailable=dict(refresh_blocked_time='not instrumented; command count does not identify blocked requests',
             read_write_turnaround_wait='not instrumented; data bus idle time has multiple causes',
-            saturated_workload_capacity='requires controlled concurrency/read-write/size sweep; no whole-link utilization scalar',
+            saturated_workload_capacity='use traffic_steady_state windows from env/run_bandwidth_sweep.sh; no whole-link utilization scalar',
             per_uid_stall_cause='global stall counters cannot prove individual request causality'),
         accounting='byte rates count handoff events; utilization uses sampled AXI cycles or clipped modeled busy intervals. Time bins are half-open [a,b), with the final simulation tick included once. Named-window TLM completions use closed END_RESP boundaries to match overall window statistics. Overlapping windows MUST NOT be summed. Event-rate/peak may exceed 1 at short-window boundaries.')
     return result,timeline,protocol_samples,bursts

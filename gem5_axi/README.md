@@ -123,7 +123,7 @@ gem5行为以包内src/systemc/tlm_bridge/gem5_to_tlm.cc为准。
 ## 时间规则
 
 instantiate前设置m5.ticks.setGlobalFrequency(10**15)，1ns=1,000,000 ticks。
-AXI默认2ns，CPU默认0.5ns。每个AXI上升沿断言：
+AXI默认666667fs（AXI256单方向约48GB/s，与默认UCIe裸容量匹配），CPU默认0.5ns。每个AXI上升沿断言：
 
     sc_time_stamp().value() == gem5::curTick()
 
@@ -148,7 +148,7 @@ packet_lifecycle.csv记录gem5首次尝试、接受、最终响应接受。重�
 - directed：17个父事务，4 outstanding，五通道背压，每笔响应拒收一次并等待
   7ns重试；2080B、4KiB拆分、非对齐、掩码及两笔DECERR。
 - serial_l3/serial_l9：单outstanding、无主动背压；每个父事务准入到完成
-  的延迟变化应等于其burst数×12ns。
+  的延迟变化应等于其burst数×6×运行时AXI周期。默认666667fs时，每个burst约增加4.000002ns。
 - cpu：真实X86TimingSimpleCPU、SE、无内核/磁盘镜像；程序/栈在host内存，
   目标8KiB不可缓存窗口走AXI。192B写、64B修改、192B读及两组64bit读写，
   共452个Packet。
@@ -172,5 +172,5 @@ Python记分板针对本测试“重叠读写分阶段”的负载，不是同�
     bash gem5_axi/scripts/run_cpu_timing.sh
 
 该脚本关闭人为停顿，分别运行RAM latency=3/9拍，检查452笔目标访问的数据、
-AXI握手、VCD，以及CPU结束时间是否增加452×12ns。结果保存在results/cpu_timing。
+AXI握手、VCD，以及每笔服务延迟是否增加6×运行时AXI周期。CPU结束时间与452笔服务延迟之和允许相差不到一个CPU周期，因为默认AXI的666667fs周期与CPU的500000fs周期不同步。结果保存在results/cpu_timing。
 详见[CPU验证记录](../integrate_doc/06_cpu_execution_validation.md)。

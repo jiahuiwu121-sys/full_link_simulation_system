@@ -220,6 +220,14 @@ def collect(directory):
         status='measured' if interconnect_stats else 'not_enabled',native_gem5_statistics=interconnect_stats,
         note='Native crossbar statistics include local host/PIO traffic. Target TLM traffic is counted separately.')
     windows = [dict(name='full_run', start_tick_fs=0, end_tick_fs=end, kind='simulation')]
+    traffic_profile = load(d, 'traffic_profile.json')
+    if traffic_profile is not None:
+        if traffic_profile.get('mode') != 'bandwidth' or not traffic_profile.get('passed'):
+            raise ValueError('Invalid bandwidth traffic profile')
+        windows.append(dict(name='traffic_steady_state',
+                            start_tick_fs=int(traffic_profile['measurement_start_tick_fs']),
+                            end_tick_fs=int(traffic_profile['measurement_end_tick_fs']),
+                            kind='continuous offered load after warmup and before cooldown drain'))
     application_markers = rows(d, 'application_markers.csv')
     roi_begin = None
     roi_index = 0
@@ -547,6 +555,13 @@ def collect(directory):
         checks['power_interval_conservation'] = all(math.isclose(sum(r[f] for r in power_intervals if r[f] is not None),
                                                                sum(c.get(f,0) for c in power['channels']),rel_tol=1e-9,abs_tol=1e-18)
                                                    for f in pfields) if enabled else True
+    if traffic_profile is not None:
+        measure_begin = int(traffic_profile.get('substream_base', 100)) + int(traffic_profile['warmup_requests'])
+        measure_end = measure_begin + int(traffic_profile['measurement_requests'])
+        measurement_members = [t for t in txns if measure_begin <= t['substream'] < measure_end]
+        checks['traffic_measurement_members'] = len(measurement_members) == int(traffic_profile['measurement_requests'])
+    else:
+        measurement_members = None
     complete = context.get('completed', False)
     status = 'complete' if complete and all(checks.values()) else 'incomplete' if not complete else 'invalid'
     overall = dict(schema=SCHEMA,status=status,simulation_end_tick_fs=end,duration_seconds=duration,
@@ -571,6 +586,7 @@ def collect(directory):
                    metric_consistency_checks=checks, independent_correctness_validation='See *_check.json; metrics consistency is not byte/timing correctness',
                    windows=windows)
     overall['application_roi_status'] = 'measured' if roi_index else 'incomplete' if roi_begin is not None else 'unavailable: workload did not emit application markers'
+    overall['traffic_profile'] = traffic_profile
     for value in overall['sources'].values():
         value['full_run_effective_bandwidth_Bps'] = ratio(value['successful_enabled_bytes'],duration)
     overall['native_gem5_global_statistics'] = {k:v for k,v in gstats.items() if '.' not in k}
@@ -583,6 +599,7 @@ def collect(directory):
     for window in windows:
         begin, finish = window['start_tick_fs'], window['end_tick_fs']
         completed_tx = [t for t in txns if begin <= t['end_resp_tick'] <= finish]
+        cohort = measurement_members if window['name'] == 'traffic_steady_state' else None
         good = [t for t in completed_tx if t['status'] == 1]
         bytes_completed = sum(t['enabled_bytes'] for t in good)
         window_duration = (finish-begin)*1e-15
@@ -590,13 +607,17 @@ def collect(directory):
         overall['window_statistics'].append(dict(window, duration_seconds=window_duration,
             completed_target_traffic=traffic(completed_tx),
             completion_accounted_effective_bandwidth_Bps=ratio(bytes_completed,window_duration),
+            measurement_cohort_traffic=traffic(cohort) if cohort is not None else None,
+            measurement_cohort_effective_bandwidth_Bps=(ratio(sum(t['enabled_bytes'] for t in cohort if t['status']==1),window_duration)
+                                                        if cohort is not None else None),
             started_target_requests=sum(begin<=t['begin_tick']<=finish for t in txns),
             requests_crossing_start=sum(t['begin_tick']<begin<t['end_resp_tick'] for t in txns),
             requests_crossing_end=sum(t['begin_tick']<finish<t['end_resp_tick'] for t in txns),
             sources={s:traffic([t for t in completed_tx if t['source']==s]) for s in sorted({t['source'] for t in txns})},
             dram_energy_j=own_power['total_energy_j'],dram_average_power_w=own_power['average_power_w'],
             power_boundary_method=own_power['boundary_method'],
-            accounting='Requests counted at END_RESP; windows overlap and MUST NOT be summed'))
+            accounting=('Requests are counted at END_RESP. Traffic steady state additionally reports the exact tester sequence cohort; '
+                        'the same time bounds define both rate denominators. Windows overlap and MUST NOT be summed')))
         for value in overall['window_statistics'][-1]['sources'].values():
             value['completion_accounted_effective_bandwidth_Bps'] = ratio(value['successful_enabled_bytes'],window_duration)
     from link_metrics import analyze

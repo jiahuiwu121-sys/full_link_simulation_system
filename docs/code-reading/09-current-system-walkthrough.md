@@ -233,7 +233,7 @@ parent 是 FIFO 收到的一笔完整 AXI burst；child 是按 DRAM transaction 
 
 `accept()` 先检查整笔范围和 strobe，再为全部 child 预留同址 hazard。默认最多 8 parent、32 在途 child；每个 parent 的最大 burst 长度受 AXI 约束，临时数据有界。年轻 parent 不会越过尚未提交的早期同 transaction child。
 
-每个 native tick，`run()` 依次 step→poll/处理命令和服务→尝试返回队首 parent→接收至多一个 parent→提交至多一个 child。native 满时保留相同 token 重试；响应满/保留时 native 继续推进，背景和 refresh 继续统计。
+每个 native tick，`run()` 依次 step→poll/处理命令和服务→尝试返回队首 parent→接收至多一个 parent→扫描可提交child并最多尝试 `ramulator_submit_width` 个（默认8个）。同址依赖仍串行；native拒绝时保留相同token在后续tick重试。响应满/保留时native继续推进，背景和refresh继续统计。
 
 同 transaction 从提交到 SERVICE 串行化，避免原生同址写合并/读转发破坏当前字节服务契约；不同 transaction 可并发。parent 以全局 FIFO 返回，强于同 ID 顺序要求。这是当前桥接策略，性能研究时要保留这个条件。
 

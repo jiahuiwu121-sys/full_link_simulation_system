@@ -29,12 +29,14 @@ def main(root):
     assert tester["response_retries"] == 17
     l3 = {t["substream"]: t for t in cases["serial_l3"]["transactions"]}
     l9 = {t["substream"]: t for t in cases["serial_l9"]["transactions"]}
+    period = cases["serial_l3"]["protocol"]["period_ticks"]
+    assert period == cases["serial_l9"]["protocol"]["period_ticks"] > 0
     changes = []
     for key, a in l3.items():
         b = l9[key]
         delta = ((b["axi_done_tick"] - b["accepted_tick"])
                  - (a["axi_done_tick"] - a["accepted_tick"]))
-        expected = a["segments"] * 6 * 2000000
+        expected = a["segments"] * 6 * period
         assert delta == expected, ("latency perturbation", key, delta, expected)
         changes.append(dict(serial=key - 100, segments=a["segments"],
                             measured_delta_ns=delta / 1e6, expected_delta_ns=expected / 1e6))
@@ -85,7 +87,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:7px;text-
 <div class="card" id="stats"></div><div class="card"><b>事务时间线</b>
 <p class="small">黄色：BEGIN_REQ 到准入；蓝色：准入到最后 B/R 握手；紫色：完成到 END_RESP。悬停查看具体时间；初始位置表示全局模拟时刻。</p>
 <div class="scroll" id="timeline"></div></div>
-<div class="card"><b>延迟扰动验证</b><p>无背压、单 outstanding：RAM 从 3 拍改成 9 拍，每个 AXI burst 增加 12 ns。所有父事务的准入到完成延迟变化都等于其 burst 数 × 12 ns。</p>
+<div class="card"><b>延迟扰动验证</b><p>无背压、单 outstanding：RAM 从 3 拍改成 9 拍，每个 AXI burst 增加6个实际AXI周期。所有父事务的准入到完成延迟变化都等于其burst数 × 6 × 运行时周期。</p>
 <p>独立校验器拒绝了三种人为损坏的记录：错误 WLAST、越界 WSTRB、错误 RDATA。</p>
 <a href="regression_summary.json">回归 JSON</a></div>
 <script>

@@ -8,6 +8,14 @@ bash env/build.sh
 bash env/run_ramulator.sh results/acceptance-ramulator2
 ```
 
+带宽饱和与延迟拐点使用独立的受控压力入口；它不替代上面的正确性回归：
+
+```bash
+SS_EXPERIMENT_LABEL=bandwidth-sweep bash env/run_bandwidth_sweep.sh
+```
+
+该入口按10%到125%六档供给负载运行，使用预热/稳态测量/冷却三个阶段，最终报告为新批次目录中的 `index.html`、`bandwidth_sweep.json`、`bandwidth_sweep.csv` 和 `bandwidth_sweep.md`。默认AXI256周期为666667fs；`--ramulator-submit-width 8` 允许每个native tick最多尝试八个独立child。
+
 三源包含 CPU 基础构建：
 
 ```bash

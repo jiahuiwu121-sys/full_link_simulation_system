@@ -55,7 +55,7 @@ for name in compared:
     assert (observed / name).read_bytes() == (control / name).read_bytes(), name
 assert finish(observed) == finish(control)
 
-slow, fast = root / "feedback/cpu_l9", root / "feedback/cpu_l3"
+slow, fast = root / "feedback/cpu_l203", root / "feedback/cpu_l3"
 slow_tx, fast_tx = rows(slow / "transactions.csv"), rows(fast / "transactions.csv")
 assert len(slow_tx) == len(fast_tx) == 452
 deltas = []
@@ -66,7 +66,10 @@ for a, b in zip(fast_tx, slow_tx):
                   (int(a["axi_done_tick"]) - int(a["accepted_tick"])))
 assert min(deltas) > 0, "Downstream latency did not delay every target access"
 cpu_delta = finish(slow) - finish(fast)
-assert cpu_delta > 0 and cpu_delta == sum(deltas), (cpu_delta, sum(deltas))
+expected_cpu_delta = sum(deltas)
+cpu_period = read_header(str(fast / "hettrace/host.hettrace")).clock_period_ticks
+assert cpu_delta > 0 and abs(cpu_delta - expected_cpu_delta) < cpu_period, (
+    cpu_delta, expected_cpu_delta, cpu_period)
 for directory in (fast, slow):
     assert "CPU AXI PASS bytes=192 checksum=24416 boundary64=ok" in (directory / "run.log").read_text()
     protocol = json.loads((directory / "protocol_summary.json").read_text())
@@ -86,11 +89,14 @@ result = {
     "observer_transparent": {"passed": True, "identical_files": compared},
     "cpu_aou_feedback": {
         "passed": True, "transactions": len(deltas), "cpu_finish_delta_ns": cpu_delta / 1e6,
+        "expected_service_delta_ns": expected_cpu_delta / 1e6,
+        "cpu_finish_quantization_error_fs": cpu_delta - expected_cpu_delta,
+        "cpu_clock_period_fs": cpu_period,
         "simulated_instructions": instructions(fast),
         "transaction_delta_min_ns": min(deltas) / 1e6,
         "transaction_delta_max_ns": max(deltas) / 1e6,
     },
-    "not_exercised_by_this_suite": ["Vortex", "CoralNPU", "mem_sim"],
+    "not_exercised_by_this_suite": ["Vortex", "CoralNPU", "Ramulator2", "mem_sim"],
 }
 (root / "summary.json").write_text(json.dumps(result, indent=2) + "\n")
 print(json.dumps(result, indent=2))

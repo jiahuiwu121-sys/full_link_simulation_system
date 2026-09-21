@@ -29,6 +29,8 @@ p.add_argument('--num-cpus',type=int,default=4)
 p.add_argument('--memsim-scale',type=int,default=1)
 p.add_argument('--max-ticks',type=int,default=20_000_000_000_000)
 p.add_argument('--replay',action='store_true')
+p.add_argument('--axi-period',default='666667fs',
+               help='AXI256 clock period; default matches the 48 GB/s UCIe raw capacity')
 a=p.parse_args()
 args=SimpleNamespace(**vars(a),env=[],vortex_fast_forward=False,vortex_kernel='',
     vortex_bar_skew=0,npu_auto_start=False,npu_no_share=False)
@@ -57,8 +59,10 @@ ranges=[AddrRange(front.SHARED_BUFFER[0],size=front.SHARED_BUFFER[1]),
 if a.vortex_library:ranges.append(AddrRange(front.VORTEX_BAR[0],size=front.VORTEX_BAR[1]))
 size=0x170000000 if a.vortex_library else 0x30000000
 system.axi=AxiDemo(backend='aou',memory_backend=a.memory_backend,base=0x90000000,size=size,
+    period=a.axi_period,
     ramulator_config=runtime_config(a,out,8 if a.vortex_library else 2),
     ramulator_slots=a.ramulator_slots,ramulator_children=a.ramulator_children,
+    ramulator_submit_width=a.ramulator_submit_width,
     ramulator_response_hold=a.ramulator_response_hold,
     memsim_channels=8 if a.vortex_library else 2,memsim_scale=a.memsim_scale,
     memsim_queue=4,memsim_slots=8,outstanding=16,planes=2,stalls=True,replay=a.replay,

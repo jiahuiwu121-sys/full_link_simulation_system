@@ -34,6 +34,12 @@ class AxiPacketTester : public SimObject {
     Tick hold;
     std::string directory;
     EventFunctionWrapper issueEvent, retryEvent;
+    bool bandwidthMode = false;
+    Tick trafficInterval = 0, nextTrafficIssue = 0;
+    uint64_t trafficWarmup = 0, trafficMeasure = 0, trafficCooldown = 0;
+    uint64_t trafficTotal = 0, trafficGenerated = 0, trafficWorkingSet = 0;
+    unsigned trafficSize = 0, trafficWritePercent = 0, trafficMaxInflight = 0;
+    double trafficOfferedLoadPercent = 0.0;
     std::deque<PacketPtr> queue;
     std::map<PacketPtr, Op> ops;
     std::set<PacketPtr> delayed;
@@ -43,9 +49,13 @@ class AxiPacketTester : public SimObject {
     bool blocked = false;
     unsigned stage = 0, inflight = 0;
     uint64_t serial = 0, done = 0, reqRetries = 0, respRetries = 0;
+    uint64_t warmupEndTick = 0, measurementEndTick = 0, firstAcceptedTick = 0;
     void add(bool write, unsigned offset, unsigned size, unsigned seed,
              bool masked = false, bool error = false);
     void nextStage();
+    void addTraffic();
+    void finishTraffic();
+    void schedulePump(Tick);
     void pump();
     bool response(PacketPtr);
     void retryResponse();

@@ -64,6 +64,8 @@ def add_options(parser, default_backend='ramulator2'):
     parser.add_argument('--ramulator-queue', type=int, default=8)
     parser.add_argument('--ramulator-slots', type=int, default=8)
     parser.add_argument('--ramulator-children', type=int, default=32)
+    parser.add_argument('--ramulator-submit-width', type=int, default=8,
+                        help='Maximum native child submission attempts per DRAM tick')
     parser.add_argument('--ramulator-response-hold', type=int, default=0)
     parser.add_argument('--ramulator-scale', type=int, default=1, help='Generate matching slow timing/memspec experiment')
     parser.add_argument('--ramulator-no-power', action='store_true')
@@ -72,8 +74,11 @@ def add_options(parser, default_backend='ramulator2'):
 
 
 def runtime_config(args, directory, default_channels=2):
-    if min(args.ramulator_queue, args.ramulator_slots, args.ramulator_children, args.ramulator_scale, args.metrics_sample_cycles) < 1 or args.ramulator_response_hold < 0:
+    if min(args.ramulator_queue, args.ramulator_slots, args.ramulator_children,
+           args.ramulator_submit_width, args.ramulator_scale, args.metrics_sample_cycles) < 1 or args.ramulator_response_hold < 0:
         raise ValueError('invalid ramulator capacity/scale/hold')
+    if args.ramulator_submit_width > args.ramulator_children:
+        raise ValueError('ramulator submit width cannot exceed the child limit')
     if args.memory_backend != 'ramulator2':
         return ''
     if args.ramulator_config:

@@ -7,10 +7,12 @@
 using namespace sc_core;
 
 RamulatorBackend::RamulatorBackend(sc_module_name name, uint64_t base_, uint64_t size_,
- unsigned slots_, unsigned children_, unsigned hold_, const std::string& config, const std::string& dir_)
- : sc_module(name), base(base_), size(size_), slots(slots_), childLimit(children_), hold(hold_),
+ unsigned slots_, unsigned children_, unsigned submit_width_, unsigned hold_, const std::string& config, const std::string& dir_)
+ : sc_module(name), base(base_), size(size_), slots(slots_), childLimit(children_),
+   submitWidth(submit_width_), hold(hold_), submitBatchHistogram(submit_width_ + 1, 0),
    backing(size_), dir(dir_), log(dir + "/ramulator_bridge.csv"), commands(dir + "/ramulator_commands.csv") {
-    if (!slots || !childLimit || !size || base > UINT64_MAX - size || config.empty())
+    if (!slots || !childLimit || !submitWidth || submitWidth > childLimit || !size ||
+        base > UINT64_MAX - size || config.empty())
         throw std::invalid_argument("invalid ramulator window/capacities/configuration");
     native = ssr_create(config.c_str(), children_, 1, dir.c_str());
     if (!native) throw std::runtime_error(ssr_error());
@@ -81,8 +83,19 @@ void RamulatorBackend::accept(SimpleMemRequest req) {
     bursts.push_back(b);
 }
 void RamulatorBackend::submit() {
-    if (active.size() >= childLimit) { ++submitStalls; ++childLimitCycles; return; }
+    bool hasUnsubmitted = false;
+    for (const auto& b : bursts)
+        if (std::any_of(b->descriptors.begin(), b->descriptors.end(), [](const auto& d) { return !d.submitted; })) {
+            hasUnsubmitted = true; break;
+        }
+    if (!hasUnsubmitted) return;
+    ++submitDispatchCycles;
+    if (active.size() >= childLimit) {
+        ++submitStalls; ++childLimitCycles; ++submitBatchHistogram[0]; return;
+    }
     bool hazardThisCycle = false;
+    bool rejectThisCycle = false;
+    unsigned attemptsThisCycle = 0, acceptedThisCycle = 0;
     for (const auto& b : bursts) for (unsigned i = 0; i < b->descriptors.size(); ++i) {
         auto& d = b->descriptors[i]; if (d.submitted) continue;
         if (hazards.at(d.address).front() != d.token) {
@@ -90,14 +103,30 @@ void RamulatorBackend::submit() {
             if (!hazardThisCycle) { ++hazardCycles; hazardThisCycle = true; }
             continue;
         }
+        if (attemptsThisCycle >= submitWidth || active.size() >= childLimit) break;
+        ++attemptsThisCycle; ++submitAttempts;
         const int accepted = checked(ssr_submit(native, d.token, d.address, b->req.write));
         if (accepted) {
             d.submitted = true; active.emplace(d.token, Child{b, i}); ++submitted;
+            ++acceptedThisCycle;
             event("submit", *b, d.offset, d.bytes, d.token, 0, 0,
                   b->req.write ? b->data.data() + d.offset : nullptr,
                   b->req.write ? b->mask.data() + d.offset : nullptr);
-        } else { ++submitStalls; ++nativeRejectCycles; event("submit_stall", *b, d.offset, d.bytes, d.token); }
-        return; // At most one actual submission per DRAM tick.
+        } else {
+            ++submitStalls; ++nativeRejectAttempts; rejectThisCycle = true;
+            event("submit_stall", *b, d.offset, d.bytes, d.token);
+        }
+    }
+    if (active.size() >= childLimit && acceptedThisCycle < submitWidth) ++childLimitCycles;
+    if (rejectThisCycle) ++nativeRejectCycles;
+    maxSubmittedPerTick = std::max(maxSubmittedPerTick, acceptedThisCycle);
+    ++submitBatchHistogram.at(acceptedThisCycle);
+    sc_assert(acceptedThisCycle <= submitWidth);
+    sc_assert(active.size() <= childLimit);
+    // Multiple independent children may enter different controller queues in
+    // one native tick. Same-transaction ordering is still protected by hazards.
+    if (attemptsThisCycle == 0 && !hazardThisCycle && active.size() < childLimit) {
+        SC_REPORT_FATAL("ramulator2", "unsubmitted child was neither dispatchable nor hazard-blocked");
     }
 }
 void RamulatorBackend::process(const ssr_event& e) {
@@ -177,6 +206,10 @@ void RamulatorBackend::finish() {
     f << "{\"passed\":true,\"drained\":true,\"bursts\":" << completed << ",\"errors\":" << error_responses
       << ",\"submitted\":" << submitted << ",\"services\":" << services << ",\"submit_stalls\":" << submitStalls
       << ",\"hazard_stalls\":" << hazardStalls << ",\"response_stalls\":" << responseStalls
+      << ",\"submit_width\":" << submitWidth << ",\"submit_attempts\":" << submitAttempts
+      << ",\"native_reject_attempts\":" << nativeRejectAttempts
+      << ",\"submit_dispatch_cycles\":" << submitDispatchCycles
+      << ",\"max_submitted_per_tick\":" << maxSubmittedPerTick
       << ",\"period_fs\":" << period << ",\"base\":" << base << ",\"size\":" << size
       << ",\"native_end_tick_fs\":" << cycle * period << ",\"simulation_end_tick_fs\":" << gem5::curTick()
       << ",\"allocated_pages\":" << backing.allocatedPages() << ",\"ordering\":\"transaction serialized; parent FIFO\"}\n";
@@ -186,8 +219,15 @@ void RamulatorBackend::finish() {
       << ",\"parent_depth_cycle_sum\":" << parentDepthSum << ",\"child_depth_cycle_sum\":" << childDepthSum
       << ",\"parent_peak\":" << parentPeak << ",\"child_peak\":" << childPeak
       << ",\"parent_capacity\":" << slots << ",\"child_capacity\":" << childLimit
+      << ",\"submit_width\":" << submitWidth << ",\"submit_batch_histogram\":[";
+    for (unsigned count = 0; count < submitBatchHistogram.size(); ++count) {
+        if (count) m << ',';
+        m << submitBatchHistogram[count];
+    }
+    m << ']'
       << ",\"stall_cycles\":{\"ingress_full\":" << ingressFullCycles
       << ",\"child_limit\":" << childLimitCycles << ",\"native_reject\":" << nativeRejectCycles
+      << ",\"native_reject_attempts\":" << nativeRejectAttempts
       << ",\"address_hazard\":" << hazardCycles << ",\"forced_response_hold\":" << holdCycles
       << ",\"response_fifo_full\":" << responseFifoCycles << ",\"parent_fifo_hol\":" << holCycles << "}}\n";
 }

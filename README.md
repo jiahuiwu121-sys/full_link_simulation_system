@@ -22,6 +22,14 @@ CPU / Vortex GPU / CoralNPU → 原生AXI256 → AXI2Flit → UCIe → 在线Ram
 
 每次运行结束后自动生成在线可视化：结果总索引 `results/index.html`、本次运行 `index.html` 和各用例 `metrics.html`，包含逐段带宽/利用率、延迟CDF与互斥分解、阻塞、功率、队列及DRAM命令图表。直接调用两个gem5配置的单用例也会自动完成链路/DRAM页面生成和独立统计校验。本地HTTP服务自动启动，VS Code容器环境通过浏览器桥接打开；设置 `SS_VISUALIZATION_OPEN=0` 可关闭自动打开浏览器，`SS_METRICS_BIN_NS` 可配置带宽曲线的期望时间分箱。
 
+默认 AXI256 周期为 666667fs，单方向载荷容量约 48GB/s，与默认 16lane×24GT/s NRZ UCIe 裸容量匹配；RamulatorBackend 默认每个 250ps native tick 最多尝试提交 8 个独立 child。使用受控稳态压力扫描研究饱和点和排队延迟：
+
+```bash
+SS_EXPERIMENT_LABEL=bandwidth-sweep bash env/run_bandwidth_sweep.sh
+```
+
+该入口运行 10%、25%、50%、75%、100%、125% 六档供给负载，输出 `bandwidth_sweep.json/csv/md` 和包含吞吐—延迟曲线的 `index.html`。普通正确性程序仍用于功能验证，不能替代压力扫描。
+
 2026-09-17 已完成在线替代后的构建与验收：八组 CPU/定向、四组 GPU/NPU、旧 RAM/simple 兼容链路均通过，包含真实数据、实际命令、DRAMPower 和独立 VCD 审计。[本机结果与时序反馈](docs/ramulator-integration.md#2026-09-17-本机验收)记录配置、报告位置及估算功耗边界。
 
 gem5和coralnpu已转为主仓库普通源码，直接打开gem5/src、coralnpu/hdl和coralnpu/hw_sim，

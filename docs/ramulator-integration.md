@@ -40,6 +40,8 @@ CPU / Vortex GPU / CoralNPU
 bash env/bootstrap.sh
 bash env/build.sh
 bash env/run_ramulator.sh results/acceptance-ramulator2
+# 受控稳态带宽—延迟扫描
+bash env/run_bandwidth_sweep.sh results/acceptance-bandwidth-sweep
 ```
 
 GPU / NPU / 三源：
@@ -83,11 +85,14 @@ XPU 配置默认选择 ramulator2。两种配置共用参数：
 | `--ramulator-queue` | 每 controller read/write queue 各 8，生成配置时使用 |
 | `--ramulator-slots` | 8 个已接收 AXI parent burst |
 | `--ramulator-children` | 32 个在途 DRAM child |
+| `--ramulator-submit-width` | 8；每个 native tick 最多尝试提交的独立 child 数，不能超过 children |
 | `--ramulator-response-hold` | 0；可增加响应等待 tick，测试反压 |
 | `--ramulator-scale` | 1；生成配套慢时钟/timing/memspec 的受控实验，验收使用 4 |
 | `--ramulator-no-power` | 不创建功耗 plugin，验证观察透明性 |
 
 默认 HBM4_32Gb_8Hi / HBM4_8000Mbps 配置使用 32B transaction、250ps 内部 tick、FRFCFSRowHit、Open row policy、HBM34PerBankRefresh、RoBaRaCoCh 和 CacheLineInterleave。单 controller 可映射 1GiB；运行时验证组织容量覆盖完整目标窗口。`run.py` 的定向/独立 CPU 后端窗口为 8KiB，bridge 的 16KiB 路由范围包含越界测试地址；`run_xpu.py` 未启用 GPU 时后端窗口为 768MiB，启用 GPU 时连同地址孔洞为 5.75GiB。
+
+默认 AXI256 周期为 666667fs，即每个独立 W/R 数据方向约 47.999976GB/s；默认 UCIe 16lane×24GT/s NRZ 经量化后的裸容量约 47.999616GB/s。两者相差远小于20%，避免旧 2ns AXI（16GB/s）在配置上先成为瓶颈。后端默认提交上限为 `8×32B/250ps=1024GB/s`，它是调度器尝试槽位上限，不是DRAM实际可持续带宽；HBM4数据总线容量仍由实际controller、pseudochannel、nBL和周期推导。页面的“模型容量平衡”同时显示这些上限及结构瓶颈。
 
 自定义配置要完整展开，External 和 memory_system clock_ratio 必须为 1；当前嵌入能力要求 CacheLineInterleave、同容量/周期/transaction/数据延迟的 ControllerBase 控制器及有效 read/write_latency。自定义配置决定通道、功耗与时序，不叠加自动 scale/no-power/channels。原生库查询实际参数，不根据 preset 名称猜测容量和延迟。
 
@@ -114,7 +119,7 @@ DRAM 队列接受不是完成。被动 observer 观察真实 `on_issue`，RD/WR 
 
 本机定向验收的实例：token=1 在 cycle 283 发出实际 WR，cycle 307 才执行数据服务，间隔为 24×250ps=6ns；token=92 的 RD 从 cycle 11147 到数据服务 cycle 11191，间隔为 44×250ps=11ns。桥接日志保留 parent、token 和物理地址，命令日志保留实际组织坐标，因此可以追溯从 AXI burst 到 DRAM 命令再到返回响应的全过程。
 
-首版按 DRAM transaction 保留访问顺序，并在 parent 接受时预留所有 child，防止更年轻请求越过尚未提交的早期 child。同址串行化避免原生写合并和读转发改变字节语义；不同 transaction 可并发。parent 响应使用全局 FIFO 顺序，强于同 ID 顺序要求。这些策略应纳入性能结果解释。
+后端按 DRAM transaction 保留访问顺序，并在 parent 接受时预留所有 child，防止更年轻请求越过尚未提交的早期 child。同址串行化避免原生写合并和读转发改变字节语义；不同 transaction 可并发。每个native tick扫描可提交项并最多尝试 `ramulator_submit_width` 个，原生队列拒绝的child留待后续tick重试。`max_submitted_per_tick`、尝试/拒绝计数及batch直方图用于证明批量路径是否真正被工作负载触发。parent 响应使用全局 FIFO 顺序，强于同 ID 顺序要求。这些策略应纳入性能结果解释。
 
 原生模型持续按自身周期推进，响应阻塞期间仍统计状态时间与刷新；没有独立线程或私自推进全局时间。finish 要求 FIFO、parent、child、hazard 和未来数据服务事件全部排空，不在 finish 内额外 tick。
 
@@ -131,6 +136,7 @@ DRAM 队列接受不是完成。被动 observer 观察真实 `on_issue`，RD/WR 
 | `ramulator_stats.yaml` | 原生性能统计 |
 | `dram_power.json` | 每 channel、汇总能量、时间与平均功率 |
 | `ramulator_*_summary.json`、`ramulator_check.json` | 计数守恒、排空、数据、时序和能量检查 |
+| `backend_queue_metrics.json` | parent/child队列、逐原因阻塞及每tick提交batch直方图 |
 | `ramulator.html`、`ramulator_data/` | 按页加载的命令、服务和最终内存视图 |
 
 公共 AXI/TLM、AoU、raw Flit 解码与 VCD 审计继续执行。新 checker 独立重建字节 reference，检查服务快照、最终内存、各层时间因果、实际命令状态/约束和能量汇总；没有调用原生调度器判断时序。负例验证掩码、未知服务、提前响应、读字节、命令时间、最终内存、重复能量和 ACT→RD 非法间隔能被拒绝。
@@ -138,6 +144,8 @@ DRAM 队列接受不是完成。被动 observer 观察真实 `on_issue`，RD/WR 
 原生 CTest 包含 online_contract 和 target_backing_contract：实际命令与读写服务延迟、容量/队满、结束排空、刷新、功耗开关透明性、慢时钟严格 timebase、稀疏零值/掩码/跨页/高地址不 alias。CPU 套件运行定向、replay、浅队列、响应保留、异步 3ns AXI、功耗关闭、CPU 与慢内存八组；XPU 套件运行 NPU、GPU、三源与慢内存四组。
 
 通过本机 HTTP 服务查看 HTML，例如 `python3 -m http.server 8000 --directory results`。交接复制整个用例目录，包含各视图数据目录和 view_store.js。
+
+`env/run_bandwidth_sweep.sh` 使用256B、50%读写、最大64个在途请求，在每档负载中执行128次预热、1024次测量和128次冷却。`traffic_steady_state` 的时间界限排除启动和最终排空；测量请求按tester稳定序号精确选取，解决同一tick多个响应造成的边界歧义。接口占用仍按同一时间窗口计算。六档结果不能相加，饱和拐点需联合观察实测吞吐增长、P95延迟、平均/峰值在途请求和首先接近100%的资源。
 
 ## 模型范围
 

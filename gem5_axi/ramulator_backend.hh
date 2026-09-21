@@ -15,7 +15,7 @@ class RamulatorBackend : public sc_core::sc_module {
     uint64_t completed = 0, error_responses = 0;
     SC_HAS_PROCESS(RamulatorBackend);
     RamulatorBackend(sc_core::sc_module_name, uint64_t base, uint64_t size,
-                     unsigned slots, unsigned children, unsigned hold,
+                     unsigned slots, unsigned children, unsigned submit_width, unsigned hold,
                      const std::string& config, const std::string& dir);
     ~RamulatorBackend();
     void finish();
@@ -39,7 +39,10 @@ class RamulatorBackend : public sc_core::sc_module {
     uint64_t parentDepthSum = 0, childDepthSum = 0, parentPeak = 0, childPeak = 0;
     uint64_t ingressFullCycles = 0, childLimitCycles = 0, nativeRejectCycles = 0;
     uint64_t hazardCycles = 0, holdCycles = 0, responseFifoCycles = 0, holCycles = 0;
-    unsigned slots, childLimit, hold;
+    uint64_t submitAttempts = 0, nativeRejectAttempts = 0, submitDispatchCycles = 0;
+    unsigned maxSubmittedPerTick = 0;
+    unsigned slots, childLimit, submitWidth, hold;
+    std::vector<uint64_t> submitBatchHistogram;
     ssr_info info{};
     ssr_memory* native = nullptr;
     TargetBackingStore backing;

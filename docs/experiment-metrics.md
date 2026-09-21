@@ -127,10 +127,15 @@ python3 env/view_results.py results/20260918-cpu-baseline-r01/cpu
 
 - AXI W/R分别使用256bit数据宽度和实际AXI周期计算单方向峰值；利用率为复位释放后该窗口的成功握手数除以时钟机会数。AW/AR/B只报告状态与握手，不冒充256bit数据带宽。四种状态 `VALID&&READY`、`VALID&&!READY`、`!VALID&&READY`、`!VALID&&!READY` 的周期数必须守恒。
 - UCIe FWD/REV分别使用运行时导出的lane/速率/调制、256B物理帧和SystemC量化后的序列化时间计算容量。利用率是TX_FRAME序列化区间的并集占比，包含重放占用，不把传播延迟算成发送总线占用，也不把RX字节重复累计。
+- Backend ingress 使用 `submit_width × transaction_bytes / native_period` 表示每tick提交槽位上限；利用率是稳态窗口内实际接受child数除以可用提交槽数。该指标用于定位桥接节流，不能替代后续controller队列和DRAM数据总线利用率。
 - 当前HBM3/HBM4按实际模型导出的transaction bytes、`nBL`、原生周期和PseudoChannel数计算每条数据总线及controller容量。利用率按实际RD/WR命令加CL/CWL后的数据突发区间并集计算；跨伪通道以独立总线容量归一化。其他DRAM类型如果没有已验证的总线容量推导，峰值和利用率保持null。
 - TLM按读写及来源输出成功有效字节速率，但没有脱离工作负载的单一峰值，因此不输出伪造的TLM利用率。全链路也不把各层百分比取平均；瓶颈要结合每层占用、背压、在途请求和数据效率判断。
 
 `SS_METRICS_BIN_NS` 可在运行前指定带宽曲线期望分箱宽度，默认100ns，必须为有限正数。为限制报告大小，实际宽度为请求值与“全程/1000”中的较大者；每个区间重新聚合完整事件，不对已有曲线抽样。时间分箱使用左闭右开区间，最后一个仿真tick只计一次；命名窗口中的TLM完成事件沿用原统计的闭合END_RESP边界，以包含定义 `target_activity` 终点的请求。很短区间的“事件带宽/峰值比”可能因事件记账落在边界而超过1，接口利用率仍由占用区间或时钟机会计算并限制在0到1。
+
+容量平衡检查要求AXI和UCIe单方向模型峰值相差不超过20%，且后端提交槽位与DRAM聚合数据总线容量不低于入口链路。它只排除配置造成的明显假瓶颈；协议头、读写方向比例、响应消息和controller调度仍会使有效载荷吞吐低于裸容量。
+
+受控压力入口 `env/run_bandwidth_sweep.sh` 生成 `traffic_steady_state`：128请求预热、1024请求测量、128请求冷却，固定256B、50%写、最大64在途，并扫描AXI理论载荷的10/25/50/75/100/125%。稳态的精确测量cohort按tester写入的substream序号选择；窗口时间用于吞吐分母和各接口占用。批次输出 `bandwidth_sweep.json/csv/md`，页面同时绘制供给/实测吞吐和P50/P95/P99。饱和点不是单个利用率阈值，而是吞吐增益开始变小且延迟或在途深度明显上升的位置，并由各段占用率定位限制资源。
 
 ### 延迟分解
 
@@ -146,7 +151,7 @@ AXI统计的分母是reset释放后的AXI上升沿；Fabric/FIFO/RP统计包含r
 
 `ramulator_timeseries.csv` 的周期性队列状态是在原生tick结束后、外部poll/submit之前采样，和上述pre-service精确队列积分的采样位置不同。`native_global_inflight` 是全局pending子事务数，在每channel行中重复，不能跨channel求和。
 
-原有 `submit_stalls/hazard_stalls/response_stalls` 保留原计数口径（调用/尝试/扫描次数）。新增后端 `stall_cycles` 区分父容量满、child limit、原生拒绝、同事务地址依赖、强制response hold、response FIFO满、父FIFO HOL。地址依赖每周期至多计一次；不同原因可能重叠，不能相加为互斥执行时间。credit等待是在请求侧staging slot有消息且credit不足时采样，不等同于全方向全部credit事件。
+原有 `submit_stalls/hazard_stalls/response_stalls` 保留兼容汇总口径；多提交后另输出 `submit_attempts`、`native_reject_attempts`、`submit_dispatch_cycles`、`max_submitted_per_tick` 和batch直方图，避免把一次tick内的多次尝试误读成周期数。后端 `stall_cycles` 区分父容量满、child limit、发生过原生拒绝的周期、同事务地址依赖、强制response hold、response FIFO满、父FIFO HOL。地址依赖和native reject周期每周期至多计一次；不同原因可能重叠，不能相加为互斥执行时间。credit等待是在请求侧staging slot有消息且credit不足时采样，不等同于全方向全部credit事件。
 
 `address_hazard` 表示扫描到被依赖阻塞的未提交子事务，同周期仍可能提交其他子事务；`child_limit` 是提交检查时子容量满的周期，即使所有已知子事务都已提交也会计数。`parent_fifo_hol` 只统计队首数据尚未完成、而更年轻的父请求已完成的周期。它们是各原因/状态的观测，不直接等于CPU停顿时间。
 
@@ -209,4 +214,15 @@ python3 env/summarize_metrics.py <批次目录>
 
 在线可视化改造另在 `results/20260918-visualization-{directed,cpu,npu,gpu,three}-r01/` 验证了退出后自动校验、三类页面、HTTP服务和索引生成；完整八组入口位于 `results/20260918-visualization-memory-batch-r01/`，验收通过。CPU与原基准的请求、AXI、两端Flit、后端事件、DRAM命令、最终数据、原生统计及功耗共9项原始输出逐字节一致。无头浏览器验证了图表、队列/模块切换、批次对比、搜索、功耗关闭、总索引，以及三源Flit交互和DRAM分页，无JavaScript错误。浏览器验收工具及依赖只放在build目录，页面运行不依赖这些工具或外部CDN。
 
-公开文献依据与更广的实验设计见 [指标与文献](code-reading/11-experiment-metrics-and-literature.md)。该研究文档列出的硬件校准、完整设备等待状态、连续稳态负载、多种子置信区间等是后续实验工作，不把未实现项记录为测量值。
+公开文献依据与更广的实验设计见 [指标与文献](code-reading/11-experiment-metrics-and-literature.md)。该研究文档列出的硬件校准、完整设备等待状态、读写比例/请求大小/地址局部性矩阵、多种子置信区间等是后续实验工作，不把未实现项记录为测量值。
+
+## 2026-09-21 容量平衡与压力负载验收
+
+- `results/20260921-bandwidth-sweep-r01`：六档受控压力扫描全部通过；10%供给时实测4.800GB/s、P95 307ns，25%及以上约7.37–7.46GB/s、P95约4.4μs。UCIe REV首先接近100%，而backend ingress约0.72%，证明该拐点不是后端单提交限制造成。
+- 后端压力用例实际达到每native tick提交8个child；提交直方图、原生提交数与映射记录守恒。AXI约47.999976GB/s、UCIe约47.999616GB/s，容量平衡检查通过。
+- `results/20260921-capacity-backend-regression-r01`：原生契约、八组Ramulator2/CPU、全部数据/链路/时序/功耗/负向/VCD检查通过。
+- `results/20260921-capacity-backend-xpu-r01`：NPU、GPU、三源和慢三源通过；慢DRAM保持相同计算结果，并使Host完成增加143.136μs、NPU周期4016→6010、GPU周期575→1135。
+- `results/20260921-bandwidth-final-smoke-r02`：最终二进制写出显式substream基数，精确测量cohort及每tick八提交再次通过。
+- `results/20260921-capacity-compat-r03`：旧RAM/simple与Aou/simple兼容入口全部通过；运行时AXI周期参与扰动计算，observer透明性通过。Aou延迟3→203拍使452笔CPU目标请求各增加120.00006ns，CPU完成时间增加54.24μs，汇总量化误差小于一个500ps CPU周期。
+
+这些数字描述当前行为模型、协议格式和固定压力模式。裸容量平衡不消除协议开销；约7.4GB/s的有效吞吐拐点需要结合UCIe反向响应帧接近满占用来解释，不能写成HBM4物理带宽上限。
