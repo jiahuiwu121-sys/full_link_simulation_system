@@ -32,11 +32,12 @@ def check(directory):
         if name in ('gpu','npu') and value['status']=='measured':
             assert read(d,name+'_device_metrics.json')==value['native_device_statistics']
     tx=rows(d,'transactions.csv'); meta=rows(d,'request_metadata.csv')
+    request_key=lambda r:(r.get('module','0'),r['id'],r['begin_tick'])
     assert len(tx)==len(meta)==overall['traffic']['requests']
     assert len({r['uid'] for r in meta})==len(meta)
-    assert {(r['id'],r['begin_tick']) for r in tx}=={(r['id'],r['begin_tick']) for r in meta}
-    metadata={(r['id'],r['begin_tick']):r for r in meta}
-    effective=sum(int(metadata[r['id'],r['begin_tick']]['enabled_bytes']) for r in tx if int(r['status'])==1)
+    assert {request_key(r) for r in tx}=={request_key(r) for r in meta}
+    metadata={request_key(r):r for r in meta}
+    effective=sum(int(metadata[request_key(r)]['enabled_bytes']) for r in tx if int(r['status'])==1)
     assert overall['effective_bytes']==effective
     values=sorted(int(r['end_resp_tick'])-int(r['begin_tick']) for r in tx)
     if values:
@@ -84,7 +85,7 @@ def check(directory):
             name=name.lower()
             return 'gpu' if 'vortex' in name else 'npu' if 'coralnpu' in name else 'cpu' if 'cpu' in name else 'tester' if 'tester' in name else 'unknown'
         for t in tx:
-            metadata_row=metadata[t['id'],t['begin_tick']]
+            metadata_row=metadata[request_key(t)]
             src=request_source(metadata_row['source_name']); status=int(t['status'])
             expected_size[src,t['command'],int(t['bytes']),status]+=1
             if status==1:expected_rw[t['command']]+=int(metadata_row['enabled_bytes'])
@@ -95,6 +96,14 @@ def check(directory):
             assert points and all(a[0]<=b[0] and a[1]<=b[1] for a,b in zip(points,points[1:]))
             near(points[-1][1],100)
         protocol=read(d,'protocol_summary.json')
+        if 'channels' not in protocol and overall.get('topology'):
+            link_protocols=[x['protocol'] for x in overall['topology']['links']]
+            protocol=dict(protocol)
+            protocol['period_ticks']=link_protocols[0]['period_ticks']
+            protocol['measured_cycles']=sum(x['measured_cycles'] for x in link_protocols)
+            protocol['channels']={ch:{field:sum(x['channels'][ch][field] for x in link_protocols)
+                                      for field in ('handshakes','stall_cycles','ready_idle_cycles','blocked_idle_cycles')}
+                                  for ch in ('AW','W','B','AR','R')}
         for ch,v in protocol['channels'].items():
             if 'ready_idle_cycles' in v:
                 assert sum(v[k] for k in ('handshakes','stall_cycles','ready_idle_cycles','blocked_idle_cycles'))==protocol['measured_cycles']
@@ -116,7 +125,7 @@ def check(directory):
         stages=diagnostic['critical_child_partition']['stages']
         partitions=rows(d,'request_latency_partition.csv')
         bytoken={r['token']:r for r in rows(d,'request_map.csv')}
-        txuid={metadata[t['id'],t['begin_tick']]['uid']:t for t in tx}
+        txuid={metadata[request_key(t)]['uid']:t for t in tx}
         latest={}
         for m in bytoken.values():
             uid=m['uid']
@@ -184,7 +193,7 @@ def check(directory):
         assert len(mapping)==native['serviced']
         assert len({r['token'] for r in mapping})==len(mapping)
         uid={r['uid']:r for r in meta}
-        txbyuid={metadata[r['id'],r['begin_tick']]['uid']:r for r in tx}
+        txbyuid={metadata[request_key(r)]['uid']:r for r in tx}
         for r in mapping:
             t=txbyuid[r['uid']]
             assert r['source_name']==uid[r['uid']]['source_name'] and r['axi_id']==t['id'] and r['command']==t['command']

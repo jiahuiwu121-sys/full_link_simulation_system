@@ -19,13 +19,25 @@ inline Config make_aou_ucie_config() {
     return cfg;
 }
 
+// The AoU framing is fixed, while physical lane geometry is a property of
+// each instantiated UCIe module.  AXI message width remains a compile-time
+// protocol choice; lane count/rate/modulation are safe runtime parameters.
+inline Config make_aou_ucie_config(unsigned lanes, double rate_gtps,
+                                   unsigned bits_per_symbol) {
+    Config cfg = make_aou_ucie_config();
+    cfg.num_lanes = lanes;
+    cfg.lane_rate_gtps = rate_gtps;
+    if (bits_per_symbol == 1) cfg.modulation = Modulation::NRZ;
+    else if (bits_per_symbol == 2) cfg.modulation = Modulation::PAM4;
+    else throw std::invalid_argument("UCIe bits_per_symbol must be 1 or 2");
+    return cfg;
+}
+
 inline void require_aou_ucie_config(const Config& cfg) {
     require_valid_config(cfg);
-    if (cfg.flit_format != FlitFormat::AouFormat6 || cfg.num_lanes != LINK_LANES ||
-        cfg.bits_per_ui() != LINK_BITS_PER_SYMBOL ||
-        !std::isfinite(cfg.lane_rate_gtps) ||
-        std::abs(cfg.lane_rate_gtps - LINK_RATE_GTPS) > 1e-9)
-        throw std::invalid_argument("UCIe format/rate 与 AXI2Flit 编译配置不一致");
+    if (cfg.flit_format != FlitFormat::AouFormat6 ||
+        !std::isfinite(cfg.lane_rate_gtps))
+        throw std::invalid_argument("UCIe AoU format/rate invalid");
 }
 
 SC_MODULE(UcieAouAdapter) {

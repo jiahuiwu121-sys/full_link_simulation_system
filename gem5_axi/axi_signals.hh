@@ -1,19 +1,26 @@
 #pragma once
 #include <systemc>
 
-// AXI4 subset: 64-bit address, 256-bit data, 16-bit IDs, INCR.
+// AXI4 subset: 64-bit address, configurable data width, 16-bit IDs, INCR.
 // Lists define real sc_in/sc_out ports and connecting sc_signal objects.
 namespace storage_axi {
-constexpr unsigned DataBits = 256;
+#ifndef AXI_DATA_WIDTH_CFG
+#define AXI_DATA_WIDTH_CFG 256
+#endif
+static_assert(AXI_DATA_WIDTH_CFG == 256 || AXI_DATA_WIDTH_CFG == 512 ||
+              AXI_DATA_WIDTH_CFG == 1024,
+              "AXI_DATA_WIDTH_CFG must be 256, 512 or 1024");
+constexpr unsigned DataBits = AXI_DATA_WIDTH_CFG;
 constexpr unsigned DataBytes = DataBits / 8;
-constexpr unsigned DataSize = 5;
+constexpr unsigned DataSize = DataBytes == 32 ? 5 : DataBytes == 64 ? 6 : 7;
 using Data = sc_dt::sc_biguint<DataBits>;
+using Strb = sc_dt::sc_biguint<DataBytes>;
 }
 #define AXI_M2S(X) \
  X(sc_dt::sc_uint<64>, awaddr) X(sc_dt::sc_uint<16>, awid) \
  X(sc_dt::sc_uint<8>, awlen) X(sc_dt::sc_uint<3>, awsize) \
  X(sc_dt::sc_uint<2>, awburst) X(bool, awvalid) \
- X(storage_axi::Data, wdata) X(sc_dt::sc_uint<32>, wstrb) \
+ X(storage_axi::Data, wdata) X(storage_axi::Strb, wstrb) \
  X(bool, wlast) X(bool, wvalid) X(bool, bready) \
  X(sc_dt::sc_uint<64>, araddr) X(sc_dt::sc_uint<16>, arid) \
  X(sc_dt::sc_uint<8>, arlen) X(sc_dt::sc_uint<3>, arsize) \
@@ -26,9 +33,15 @@ using Data = sc_dt::sc_biguint<DataBits>;
 
 namespace storage_axi {
 struct Signals {
-#define FIELD(T, n) sc_core::sc_signal<T> n{#n};
+#define FIELD(T, n) sc_core::sc_signal<T> n;
     AXI_M2S(FIELD) AXI_S2M(FIELD)
 #undef FIELD
+    int name_anchor;
+    explicit Signals(const std::string& prefix = "") :
+#define INIT(T, n) n((prefix.empty() ? std::string(#n) : prefix + "_" + #n).c_str()),
+        AXI_M2S(INIT) AXI_S2M(INIT)
+#undef INIT
+        name_anchor(0) {}
     void trace(sc_core::sc_trace_file* f) {
 #define TRACE(T, n) sc_core::sc_trace(f, n, #n);
         AXI_M2S(TRACE) AXI_S2M(TRACE)

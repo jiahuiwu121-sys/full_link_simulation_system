@@ -86,6 +86,7 @@ def check(directory):
     power = json.loads((directory/'dram_power.json').read_text())
     models = json.loads((directory/'ramulator_model.json').read_text())['controllers']
     base, size, period, granule = bridge['base'], bridge['size'], native['period_fs'], native['transaction_bytes']
+    data_bytes = json.loads((directory/'aou_summary.json').read_text()).get('width', 256) // 8
     assert bridge['passed'] and bridge['drained'] and native['passed'] and native['drained']
     assert bridge['period_fs'] == period and size <= native['capacity_bytes']
     assert bridge['native_end_tick_fs'] == native['cycles'] * period
@@ -104,15 +105,15 @@ def check(directory):
             data, mask, returned = bytearray(), [], bytearray()
             forward = [paths[ch,a['id'],a['tick']]]; reverse = []
             for beat in range(beats):
-                lane = (int(a['address']) + beat*width) % 32
+                lane = (int(a['address']) + beat*width) % data_bytes
                 if ch == 'AW':
                     w = next(writes)
-                    data.extend(int(w['data_hex'],16).to_bytes(32,'little')[lane:lane+width])
+                    data.extend(int(w['data_hex'],16).to_bytes(data_bytes,'little')[lane:lane+width])
                     mask.extend(str((int(w['strb_hex'],16) >> (lane+j)) & 1) for j in range(width))
                     forward.append(paths['W',a['id'],w['tick']])
                 else:
                     r = replies['R'][a['id']].popleft()
-                    returned.extend(int(r['data_hex'],16).to_bytes(32,'little')[lane:lane+width])
+                    returned.extend(int(r['data_hex'],16).to_bytes(data_bytes,'little')[lane:lane+width])
                     reverse.append(paths['R',a['id'],r['tick']])
             if ch == 'AW':
                 r = replies['B'][a['id']].popleft(); reverse.append(paths['B',a['id'],r['tick']])

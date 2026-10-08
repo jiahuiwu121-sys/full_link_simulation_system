@@ -21,8 +21,12 @@ def check(directory):
     core = json.loads((directory/'memsim_core.json').read_text())
     bridge = json.loads((directory/'memsim_bridge_summary.json').read_text())
     period, granule, size = cfg['period_fs'], cfg['transaction_bytes'], cfg['window_bytes']
-    config = json.loads((directory/'config.json').read_text())['systemc_kernel']['system']['axi']
+    config_path = directory/'config.json'
+    if not config_path.exists() and directory.parent.name == 'links':
+        config_path = directory.parent.parent/'config.json'
+    config = json.loads(config_path.read_text())['systemc_kernel']['system']['axi']
     base = int(config['base'])
+    data_bytes = json.loads((directory/'aou_summary.json').read_text()).get('width', 256) // 8
     assert cfg['phy'] == 'behavioral' and core['passed'] and bridge['passed']
     assert core['command_errors'] == core['dfi_errors'] == 0
     assert bridge['period_fs'] == period
@@ -43,15 +47,15 @@ def check(directory):
             forward = [paths[ch, a['id'], a['tick']]]
             reverse = []
             for beat in range(beats):
-                lane = (int(a['address']) + beat*width) % 32
+                lane = (int(a['address']) + beat*width) % data_bytes
                 if ch == 'AW':
                     w = next(ws)
-                    data.extend(int(w['data_hex'],16).to_bytes(32,'little')[lane:lane+width])
+                    data.extend(int(w['data_hex'],16).to_bytes(data_bytes,'little')[lane:lane+width])
                     mask.extend(str((int(w['strb_hex'],16) >> (lane+j)) & 1) for j in range(width))
                     forward.append(paths['W',a['id'],w['tick']])
                 else:
                     r = replies['R'][a['id']].popleft()
-                    returned.extend(int(r['data_hex'],16).to_bytes(32,'little')[lane:lane+width])
+                    returned.extend(int(r['data_hex'],16).to_bytes(data_bytes,'little')[lane:lane+width])
                     reverse.append(paths['R',a['id'],r['tick']])
             if ch == 'AW':
                 r = replies['B'][a['id']].popleft()

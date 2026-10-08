@@ -11,12 +11,14 @@ def read(p):
 
 def build(d):
     paths=read(d/'axi_flit_path.csv'); records=read(d/'ucie_flits.csv')
+    data_bits=json.loads((d/'protocol_summary.json').read_text()).get('axi_data_bits',256)
+    bus='axi'+str(data_bits)
     (d/'axi_view.gtkw').write_text('[dumpfile] "axi_wave.vcd"\n[timestart] 0\n@28\nSystemC.ACLK\nSystemC.ARESETn\n'+''.join(
-        '@28\nSystemC.axi256.'+ch+'valid\nSystemC.axi256.'+ch+'ready\n@22\n'+''.join('SystemC.axi256.'+ch+s+'\n' for s in fields)
+        '@28\nSystemC.'+bus+'.'+ch+'valid\nSystemC.'+bus+'.'+ch+'ready\n@22\n'+''.join('SystemC.'+bus+'.'+ch+s+'\n' for s in fields)
         for ch,fields in [('aw',['id','addr','len','size']),('w',['data','strb','last']),('b',['id','resp']),('ar',['id','addr','len','size']),('r',['id','data','last','resp'])]))
     # A representative early active window; every edge is from the actual VCD.
     start=max(0,min(int(p['axi_tick_fs']) for p in paths)-12000000); end=start+120000000
-    names=['ACLK','ARESETn']+['axi256.'+ch+s for ch in ('aw','w','b','ar','r') for s in ('valid','ready')]
+    names=['ACLK','ARESETn']+[bus+'.'+ch+s for ch in ('aw','w','b','ar','r') for s in ('valid','ready')]
     points={n:[(start,0)] for n in names}
     for t,delta in vcd_groups(d/'axi_wave.vcd'):
         if t>end:break
@@ -26,7 +28,7 @@ def build(d):
                 else:points[n].append((t,delta[n]))
     width=1400; left=165; scale=(width-left-25)/(end-start); height=75+len(names)*35
     svg=[f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}"><rect width="100%" height="100%" fill="white"/><style>text{{font:13px monospace}}</style>',
-         '<text x="12" y="20">AXI256 sampled waveform · actual VCD · time in ns</text>']
+         f'<text x="12" y="20">AXI{data_bits} sampled waveform · actual VCD · time in ns</text>']
     for t in range(start,end+1,10000000):
         x=left+(t-start)*scale
         svg.append(f'<path d="M{x} 42V{height-10}" stroke="#e4e8ed"/><text x="{x}" y="38">{t/1e6:g}</text>')

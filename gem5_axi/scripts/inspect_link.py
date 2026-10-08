@@ -70,31 +70,33 @@ class Decoder:
 
 
 def audit_wave(d):
-    # Audit all five 256-bit channels, including control fields and stalls.
+    # Audit all five configured-width channels, including control fields and stalls.
+    data_bits=json.loads((d/'protocol_summary.json').read_text()).get('axi_data_bits',256)
+    prefix='axi'+str(data_bits)+'.'
     state={}; held={}; actual=[]; cycles=[]
-    payloads={ch:tuple('axi256.'+n for n in names) for ch,names in CHANNELS.items()}
+    payloads={ch:tuple(prefix+n for n in names) for ch,names in CHANNELS.items()}
     for ch in ('AW','AR'):
-        payloads[ch]+=tuple('axi256.'+ch.lower()+n for n in ('lock','cache','prot','qos','user'))
-    for ch in ('W','B','R'): payloads[ch]+=('axi256.'+ch.lower()+'user',)
+        payloads[ch]+=tuple(prefix+ch.lower()+n for n in ('lock','cache','prot','qos','user'))
+    for ch in ('W','B','R'): payloads[ch]+=(prefix+ch.lower()+'user',)
     for tick,changes in vcd_groups(d/'axi_wave.vcd'):
         before=state.copy(); state.update(changes)
         edge=state.get('ACLK')==1 and before.get('ACLK')!=1
         if not before.get('ARESETn'): continue
         for ch,names in payloads.items():
-            pre='axi256.'+ch.lower(); v=before[pre+'valid']; ready=before[pre+'ready']
+            pre=prefix+ch.lower(); v=before[pre+'valid']; ready=before[pre+'ready']
             if v and (not edge or not ready):
                 assert state[pre+'valid']==1 and all(state[n]==before[n] for n in names), (tick,ch,'unstable wide channel')
             if edge and v and ready:
                 r=dict(tick_fs=tick,channel=ch,axi_id='',address='',length='',size='',data_hex='',strb_hex='',last='',resp='')
                 if ch in ('AW','AR'):
                     r.update(axi_id=before[pre+'id'],address=before[pre+'addr'],length=before[pre+'len'],size=before[pre+'size'])
-                elif ch=='W': r.update(data_hex=format(before[pre+'data'],'064x'),strb_hex=format(before[pre+'strb'],'x'),last=before[pre+'last'])
+                elif ch=='W': r.update(data_hex=format(before[pre+'data'],f'0{data_bits//4}x'),strb_hex=format(before[pre+'strb'],'x'),last=before[pre+'last'])
                 elif ch=='B': r.update(axi_id=before[pre+'id'],resp=before[pre+'resp'])
-                else:r.update(axi_id=before[pre+'id'],data_hex=format(before[pre+'data'],'064x'),last=before[pre+'last'],resp=before[pre+'resp'])
+                else:r.update(axi_id=before[pre+'id'],data_hex=format(before[pre+'data'],f'0{data_bits//4}x'),last=before[pre+'last'],resp=before[pre+'resp'])
                 actual.append(r)
             if edge and (v or ready) and tick<=200000000:
                 cycles.append(dict(tick_fs=tick,channel=ch,valid=v,ready=ready,handshake=int(v and ready),payload=' '.join(n.split('.')[-1]+'='+hex(before[n]) for n in names)))
-    write_csv(d/'axi256_handshakes.csv',actual)
+    write_csv(d/f'axi{data_bits}_handshakes.csv',actual)
     write_csv(d/'axi_first_200ns_cycles.csv',cycles,fields=['tick_fs','channel','valid','ready','handshake','payload'])
     # Exact comparison with the separately sampled SystemC monitor.
     expected=[r for r in read_csv(d/'aou_events.csv') if r['channel'] in CHANNELS]
@@ -110,6 +112,8 @@ def audit_wave(d):
 
 
 def inspect(d):
+    link_config=json.loads((d/'fabric_metrics.json').read_text()).get('link_config',{})
+    minimum_frame_latency=(link_config.get('serialize_ui',128)+16)*link_config.get('ui_fs',41667)
     rows=read_csv(d/'ucie_flits.csv'); bykey=collections.defaultdict(dict); expected_seq=collections.Counter(); rx_seen=set()
     decoders={}; messages=[]; counts=collections.Counter(); physical=collections.Counter()
     for i,r in enumerate(rows,1):
@@ -130,8 +134,8 @@ def inspect(d):
         elif event=='RX_FRAME':
             assert len(raw)==256 and int(r['attempt'])==len(item['received'])+1
             sent=item['attempts'][int(r['attempt'])-1]
-            # 128 UI serialization + 4+8+4 UI pipeline, zero configured skew.
-            assert int(r['tick_fs'])-int(sent['tick_fs'])>=144*41667
+            # Resolved serialization + default 4+8+4 UI pipeline, zero configured skew.
+            assert int(r['tick_fs'])-int(sent['tick_fs'])>=minimum_frame_latency
             good=crc_ok(raw); diff=(raw[0]-expected_seq[direction])%256
             status='crc_error' if not good else 'in_order' if diff==0 else 'duplicate' if diff>127 else 'seq_error'
             assert status==r['status']; physical[status]+=1

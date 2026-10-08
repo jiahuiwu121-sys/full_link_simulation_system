@@ -19,6 +19,7 @@ git commit -m "说明本次行为变化的中文提交信息"
 gem5、CoralNPU 的本地快照已展开为主仓库源码，导入来源与版本核实边界见
 [内置源码说明](source-layout.md)及env/vendored_sources.json。必要基础适配直接维护源码，
 构建不重复打补丁。mem_sim已由此前提交移除，历史内存导入记录继续保留供追溯。当前默认在线后端为 Ramulator2，接入契约见[在线后端说明](ramulator-integration.md)。
+并行 AXI/UCIe/memory-node 的配置契约与回归边界见[第二阶段拓扑扩展](topology-extension.md)。
 
 ## 迁移历史
 

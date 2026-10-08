@@ -25,7 +25,7 @@ def check(directory, latency=3, directed=False):
     summary = json.loads((directory / "protocol_summary.json").read_text())
     period = summary["period_ticks"]
     data_bits = summary.get('axi_data_bits', 64)  # historical captures
-    assert data_bits in (64, 256)
+    assert data_bits in (64, 256, 512, 1024)
     data_bytes = data_bits // 8
     assert summary["ticks_per_second"] == 10**15
     assert summary["drained"]
@@ -51,7 +51,10 @@ def check(directory, latency=3, directed=False):
     for c, es in by_channel.items():
         assert len(es) == summary["channels"][c]["handshakes"]
         assert all(e["tick"] % period == 0 for e in es), "off-edge handshake"
-    config = json.loads((directory / 'config.json').read_text())['systemc_kernel']['system']['axi']
+    config_path = directory / 'config.json'
+    if not config_path.exists() and directory.parent.name == 'links':
+        config_path = directory.parent.parent / 'config.json'
+    config = json.loads(config_path.read_text())['systemc_kernel']['system']['axi']
     base, size = int(config['base']), int(config['size'])
     narrow = limit256 = masked = aw_leads = w_leads = errors = full_width = 0
     writes, changes = [], []

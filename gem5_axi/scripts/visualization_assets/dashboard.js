@@ -64,9 +64,20 @@ function diagnosticPage(d){
  element('p','低利用率需要结合并发、背压和字节效率解释。traffic_steady_state 来自受控压力负载；普通CPU/GPU/NPU正确性用例仍不能单独代表链路饱和能力。',limits).className='hint';
 }
 
+function topologyPage(o){
+ const topology=o.topology;if(!topology||!topology.links?.length)return;
+ const s=section('并行拓扑与各物理路径');
+ const resolved=topology.resolved||{},routing=resolved.routing||{},balance=topology.request_balance||{};
+ cards([['模块数',topology.links.length],['路由策略',routing.policy],['地址条带/B',routing.stripe_bytes],['最少模块请求',balance.min],['最多模块请求',balance.max],['最大值/平均值',balance.max_to_mean]],s);
+ table(s,['模块','名称','请求','有效吞吐/GB/s','AXI W/%','AXI R/%','UCIe正向/%','UCIe反向/%','后端bursts','DRAM子事务','DRAM命令','能量/μJ','功率/W'],topology.links.map(x=>{const m=x.metrics||{},u=m.ucie||{},name=resolved.modules?.find(v=>v.id===x.id)?.name;return[x.id,name,m.traffic?.requests,m.effective_bandwidth_Bps==null?null:m.effective_bandwidth_Bps/1e9,percent(m.axi_utilization?.W),percent(m.axi_utilization?.R),percent(u.forward?.physical_utilization),percent(u.reverse?.physical_utilization),m.backend_bursts,m.backend_children,m.dram_commands,m.dram_energy_j==null?null:m.dram_energy_j*1e6,m.dram_average_power_w];}));
+ table(s,['模块','lanes','速率/GT/s','调制bit/UI','单向裸峰值/GB/s','正向物理带宽/GB/s','反向物理带宽/GB/s','正向新帧','正向重放','反向新帧','反向重放'],topology.links.map(x=>{const c=x.fabric?.link_config||{},m=x.metrics||{},u=m.ucie||{};return[x.id,c.lanes,c.rate_gtps,c.bits_per_symbol,m.ucie_raw_peak_Bps==null?null:m.ucie_raw_peak_Bps/1e9,u.forward?.physical_bandwidth_Bps==null?null:u.forward.physical_bandwidth_Bps/1e9,u.reverse?.physical_bandwidth_Bps==null?null:u.reverse.physical_bandwidth_Bps/1e9,u.forward?.new_flits,u.forward?.replay_flits,u.reverse?.new_flits,u.reverse?.replay_flits];}));
+ element('p','每行是一条独立的 TLM→AXI→UCIe→memory-node 路径。UCIe利用率用实际物理发送位数除以该模块 lanes×GT/s×调制位数×仿真时间；AXI读写利用率用握手拍数除以复位释放后的可用时钟拍。DRAM能量可跨独立节点求和，请求延迟仍按每个原始请求统计。',s).className='hint';
+}
+
 async function casePage(d){const o=d.overall;$('status').textContent=`运行状态：${o.status}；独立统计校验：${d.check?.passed===true?'通过':'未完成/未通过'}`;
 cards([['模拟时间 / μs',o.duration_seconds*1e6],['目标请求',o.traffic.requests],['有效字节 / B',o.effective_bytes],['全程有效吞吐 / MB/s',o.full_run_effective_bandwidth_Bps==null?null:o.full_run_effective_bandwidth_Bps/1e6],['DRAM能量 / μJ',o.dram_energy_j==null?null:o.dram_energy_j*1e6],['DRAM平均功率 / W',o.dram_average_power_w]]);
 element('p','当前能量模型仅覆盖DRAM。全程、任务和kernel窗口口径不同；重叠窗口的能量不可相加。',content).className='hint';
+topologyPage(o);
 const plots=element('div',null,content);plots.className='plots';const p=section('DRAM区间平均功率',plots);lines(p,d.power,'模拟时间 / ns','功率 / W');const q=section('DRAM队列采样占用',plots),select=element('select',null,q),plot=element('div',null,q);for(const name of Object.keys(d.queues))element('option',name,select);const draw=()=>{plot.replaceChildren();lines(plot,{[select.value]:d.queues[select.value]||[]},'模拟时间 / ns','队列深度');};select.onchange=draw;draw();element('p',d.sampling_note,content).className='hint';
 diagnosticPage(d);
 const lat=section('请求延迟分位数 / ns');bars(lat,['mean_fs','p50_fs','p95_fs','p99_fs','max_fs'].filter(k=>o.latency[k]!=null).map(k=>[k.replace('_fs',''),o.latency[k]/1e6]),'ns');

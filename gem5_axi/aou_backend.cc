@@ -71,25 +71,27 @@ struct AouBackend::Fabric : sc_module {
     std::array<std::array<uint64_t, 3>, MAX_RESOURCE_PLANES> credit_stalls{};
     std::array<std::array<uint64_t, 3>, MAX_RESOURCE_PLANES> credit_sums{};
     std::map<std::pair<std::string,uint64_t>,unsigned> sends, receives;
-    sc_signal<sc_biguint<256>> wide_wdata, wide_rdata;
-    sc_signal<sc_uint<32>> wide_strb;
-    static Config config(bool replay) {
-        auto c = make_aou_ucie_config();
+    sc_signal<Data> wide_wdata, wide_rdata;
+    sc_signal<Strb> wide_strb;
+    static Config config(bool replay, unsigned lanes, double rate, unsigned bits) {
+        auto c = make_aou_ucie_config(lanes, rate, bits);
         c.awgn_sigma = c.jitter_sigma_ui = c.isi_h1 = c.isi_h2 = 0;
         c.lane_skew_max_ui = 0; c.extra_flit_error_rate = replay ? 0.02 : 0;
         return c;
     }
     SC_HAS_PROCESS(Fabric);
-    Fabric(sc_module_name n, AouBackend& o, const gem5::AxiDemoParams& p)
-      : sc_module(n), owner(o), cfg(config(p.replay)), planes(p.planes),
+    Fabric(sc_module_name n, AouBackend& o, const gem5::AxiDemoParams& p,
+           const std::string& trace_dir, const std::string& ramulator_config,
+           unsigned lanes, double rate, unsigned bits)
+      : sc_module(n), owner(o), cfg(config(p.replay, lanes, rate, bits)), planes(p.planes),
         bridge("bridge", planes), adapter("adapter", cfg),
         link("link", cfg, &stats, sc_time(cfg.ui_fs(), SC_FS)),
         target("target", cfg, planes),
-        log(p.trace_dir + "/aou_events.csv") {
+        log(trace_dir + "/aou_events.csv") {
         g_aou_verbose = false;
-        flit_log.open(p.trace_dir + "/ucie_flits.csv");
-        soc_log.open(p.trace_dir + "/ucie_soc.csv");
-        mem_log.open(p.trace_dir + "/ucie_mem.csv");
+        flit_log.open(trace_dir + "/ucie_flits.csv");
+        soc_log.open(trace_dir + "/ucie_soc.csv");
+        mem_log.open(trace_dir + "/ucie_mem.csv");
         if (!flit_log || !soc_log || !mem_log) throw std::runtime_error("cannot open UCIe logs");
         const char* header = "record,tick_fs,time_ns,delta,endpoint,direction,event,seq,seq8,flit_id,attempt,replay,status,bytes,hex\n";
         flit_log << header; soc_log << header; mem_log << header;
@@ -121,13 +123,13 @@ struct AouBackend::Fabric : sc_module {
             ramulator = std::make_unique<RamulatorBackend>("memory", p.base, p.size,
                 p.ramulator_slots, p.ramulator_children, p.ramulator_submit_width,
                 p.ramulator_response_hold,
-                p.ramulator_config, p.trace_dir);
+                ramulator_config, trace_dir);
             ramulator->request(requests); ramulator->response(responses);
 #ifdef SS_HAVE_MEMSIM
         } else if (p.memory_backend == "memsim") {
             memory = std::make_unique<MemSimBackend>("memory", p.base, p.size,
                 p.memsim_slots, p.memsim_channels, p.memsim_scale,
-                p.memsim_queue, p.memsim_response_hold, p.trace_dir);
+                p.memsim_queue, p.memsim_response_hold, trace_dir);
             memory->request(requests); memory->response(responses);
 #endif
         } else if (p.memory_backend == "simple") {
@@ -184,11 +186,11 @@ struct AouBackend::Fabric : sc_module {
         arv = on && a.arvalid.read(); a.arready = on && arr.read();
         WChannel wd;
         if (!writes.empty()) {
-            // Both sides now carry the same 32 byte lanes, including narrow
+            // Both sides carry the same configured data lanes, including narrow
             // transfers. No narrowing, widening or address-dependent shifting.
             for (unsigned j = 0; j < DataBytes; ++j) {
                 wd.data[j] = a.wdata.read().range(8*j+7, 8*j).to_uint();
-                wd.strb[j] = (a.wstrb.read().to_uint() >> j) & 1;
+                wd.strb[j] = a.wstrb.read()[j] ? 1 : 0;
             }
         }
         wd.last = a.wlast.read(); w.write(wd);
@@ -202,9 +204,9 @@ struct AouBackend::Fabric : sc_module {
         for (unsigned j = 0; j < DataBytes; ++j)
             rd.range(8*j+7, 8*j) = r.read().data[j];
         a.rdata = rd;
-        sc_biguint<256> wd_wave = 0, rd_wave = 0;
-        sc_uint<32> st = 0;
-        for (unsigned j = 0; j < 32; ++j) {
+        Data wd_wave = 0, rd_wave = 0;
+        Strb st = 0;
+        for (unsigned j = 0; j < DataBytes; ++j) {
             wd_wave.range(8*j+7,8*j) = wd.data[j];
             rd_wave.range(8*j+7,8*j) = r.read().data[j]; st[j] = wd.strb[j] != 0;
         }
@@ -215,10 +217,13 @@ struct AouBackend::Fabric : sc_module {
         static const char hex[] = "0123456789abcdef";
         log << sc_time_stamp().value() << ',' << ch << ',' << id << ',' << addr
             << ',' << len << ',' << size << ',';
-        if (data) for (int j=31;j>=0;--j) log << hex[data[j]>>4] << hex[data[j]&15];
+        if (data) for (int j=int(DataBytes)-1;j>=0;--j) log << hex[data[j]>>4] << hex[data[j]&15];
         log << ',';
-        if (strb) { uint32_t mask=0; for (unsigned j=0;j<32;++j) mask |= uint32_t(!!strb[j])<<j;
-            log << std::hex << mask << std::dec; }
+        if (strb) {
+            Strb mask = 0;
+            for (unsigned j = 0; j < DataBytes; ++j) mask[j] = strb[j] != 0;
+            log << mask.to_string(sc_dt::SC_HEX, false);
+        }
         log << ',' << last << ',' << resp << '\n';
     }
     void tick() {
@@ -272,8 +277,12 @@ struct AouBackend::Fabric : sc_module {
         changed.notify(SC_ZERO_TIME);
     }
 };
-AouBackend::AouBackend(sc_module_name n, const gem5::AxiDemoParams& p)
-    : sc_module(n), fabric(std::make_unique<Fabric>("fabric", *this, p)) {}
+AouBackend::AouBackend(sc_module_name n, const gem5::AxiDemoParams& p,
+                       unsigned, const std::string& trace_dir,
+                       const std::string& ramulator_config, unsigned lanes,
+                       double rate, unsigned bits)
+    : sc_module(n), fabric(std::make_unique<Fabric>("fabric", *this, p,
+          trace_dir, ramulator_config, lanes, rate, bits)) {}
 AouBackend::~AouBackend() = default;
 bool AouBackend::ready() const {
     auto s=static_cast<LinkState>(fabric->state.read());
@@ -294,11 +303,12 @@ void AouBackend::trace(sc_trace_file* f) {
 #undef TRACE
     sc_trace(f,s.aw,"aou.aw"); sc_trace(f,s.ra,"aou.ar");
     // Canonical signal names: embedded struct valid/ready are not handshakes.
-    sc_trace(f,s.av,"axi256.awvalid"); sc_trace(f,s.ar,"axi256.awready");
-    sc_trace(f,s.wv,"axi256.wvalid"); sc_trace(f,s.wr,"axi256.wready");
-    sc_trace(f,s.arv,"axi256.arvalid"); sc_trace(f,s.arr,"axi256.arready");
-    sc_trace(f,s.bv,"axi256.bvalid"); sc_trace(f,s.br,"axi256.bready");
-    sc_trace(f,s.rv,"axi256.rvalid"); sc_trace(f,s.rr,"axi256.rready");
+    const std::string bus = "axi" + std::to_string(DataBits) + ".";
+    sc_trace(f,s.av,bus+"awvalid"); sc_trace(f,s.ar,bus+"awready");
+    sc_trace(f,s.wv,bus+"wvalid"); sc_trace(f,s.wr,bus+"wready");
+    sc_trace(f,s.arv,bus+"arvalid"); sc_trace(f,s.arr,bus+"arready");
+    sc_trace(f,s.bv,bus+"bvalid"); sc_trace(f,s.br,bus+"bready");
+    sc_trace(f,s.rv,bus+"rvalid"); sc_trace(f,s.rr,bus+"rready");
     auto addr = [&](const AxChannel& x,const std::string& prefix) {
         sc_trace(f,x.id,prefix+"id"); sc_trace(f,x.addr,prefix+"addr");
         sc_trace(f,x.len,prefix+"len"); sc_trace(f,x.size,prefix+"size");
@@ -306,14 +316,14 @@ void AouBackend::trace(sc_trace_file* f) {
         sc_trace(f,x.cache,prefix+"cache"); sc_trace(f,x.prot,prefix+"prot");
         sc_trace(f,x.qos,prefix+"qos"); sc_trace(f,x.user,prefix+"user");
     };
-    addr(s.aw.read(),"axi256.aw"); addr(s.ra.read(),"axi256.ar");
-    sc_trace(f,s.wide_wdata,"axi256.wdata"); sc_trace(f,s.wide_strb,"axi256.wstrb");
-    sc_trace(f,s.w.read().last,"axi256.wlast"); sc_trace(f,s.w.read().user,"axi256.wuser");
-    sc_trace(f,s.b.read().id,"axi256.bid"); sc_trace(f,s.b.read().resp,"axi256.bresp");
-    sc_trace(f,s.b.read().user,"axi256.buser");
-    sc_trace(f,s.wide_rdata,"axi256.rdata"); sc_trace(f,s.r.read().id,"axi256.rid");
-    sc_trace(f,s.r.read().last,"axi256.rlast"); sc_trace(f,s.r.read().resp,"axi256.rresp");
-    sc_trace(f,s.r.read().user,"axi256.ruser");
+    addr(s.aw.read(),bus+"aw"); addr(s.ra.read(),bus+"ar");
+    sc_trace(f,s.wide_wdata,bus+"wdata"); sc_trace(f,s.wide_strb,bus+"wstrb");
+    sc_trace(f,s.w.read().last,bus+"wlast"); sc_trace(f,s.w.read().user,bus+"wuser");
+    sc_trace(f,s.b.read().id,bus+"bid"); sc_trace(f,s.b.read().resp,bus+"bresp");
+    sc_trace(f,s.b.read().user,bus+"buser");
+    sc_trace(f,s.wide_rdata,bus+"rdata"); sc_trace(f,s.r.read().id,bus+"rid");
+    sc_trace(f,s.r.read().last,bus+"rlast"); sc_trace(f,s.r.read().resp,bus+"rresp");
+    sc_trace(f,s.r.read().user,bus+"ruser");
     sc_trace(f,s.b,"aou.b"); sc_trace(f,s.r,"aou.r");
     sc_trace(f,s.tx,"aou.tx"); sc_trace(f,s.rx,"aou.rx");
 }
@@ -326,7 +336,7 @@ void AouBackend::finish(const std::string& dir) {
     if (s.memory) s.memory->finish();
 #endif
     std::ofstream f(dir+"/aou_summary.json");
-    f << "{\"width\":256,\"planes\":" << s.planes
+    f << "{\"width\":" << DataBits << ",\"planes\":" << s.planes
       << ",\"memory_completed\":" << s.memoryCompleted()
       << ",\"memory_errors\":" << s.memoryErrors()
       << ",\"target_reads\":" << s.target.reads << ",\"target_writes\":" << s.target.writes
@@ -369,7 +379,8 @@ void AouBackend::finish(const std::string& dir) {
     m << "]},\"ucie\":{";
     bool first = true;
     for (const auto& item : {std::make_pair("forward", &s.stats.forward), std::make_pair("reverse", &s.stats.reverse)}) {
-        if (!first) m << ','; first = false;
+        if (!first) m << ',';
+        first = false;
         m << '"' << item.first << "\":{";
         const auto& x = *item.second;
 #define SS_LINK_FIELD(n) m << "\"" #n "\":" << x.n << ','

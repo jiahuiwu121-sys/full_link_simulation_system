@@ -159,6 +159,33 @@ def collect(directory):
     out.mkdir(exist_ok=True)
     context = load(d, 'metrics_run.json', {})
     protocol = load(d, 'protocol_summary.json', {})
+    topology = load(d, 'topology_summary.json', {})
+    topology_links = []
+    if topology.get('modules', 1) > 1:
+        for item in topology.get('links', []):
+            link_dir = d / item['result_dir']
+            topology_links.append(dict(
+                id=item['id'], result_dir=item['result_dir'],
+                protocol=load(link_dir, 'protocol_summary.json', {}),
+                aou=load(link_dir, 'aou_summary.json', {}),
+                fabric=load(link_dir, 'fabric_metrics.json', {}),
+                backend=load(link_dir, 'ramulator_backend_summary.json', {}),
+                native=load(link_dir, 'ramulator_native_summary.json', {}),
+                power=load(link_dir, 'dram_power.json', {})))
+        # Concurrent module-cycles are the correct denominator for aggregate
+        # AXI slot utilization. Per-link reports remain authoritative for a
+        # particular physical interface.
+        channels = {}
+        for ch in ('AW','W','B','AR','R'):
+            channels[ch] = {field:sum(x['protocol'].get('channels',{}).get(ch,{}).get(field,0)
+                                      for x in topology_links)
+                            for field in ('handshakes','stall_cycles','ready_idle_cycles','blocked_idle_cycles')}
+        protocol.update(
+            period_ticks=next((x['protocol'].get('period_ticks') for x in topology_links if x['protocol']),0),
+            measured_cycles=sum(x['protocol'].get('measured_cycles',0) for x in topology_links),
+            first_measured_tick_fs=min((x['protocol'].get('first_measured_tick_fs',0) for x in topology_links if x['protocol']),default=0),
+            last_measured_tick_fs=max((x['protocol'].get('last_measured_tick_fs',0) for x in topology_links if x['protocol']),default=0),
+            channels=channels)
     native = load(d, 'ramulator_native_summary.json', {})
     backend = load(d, 'ramulator_backend_summary.json', {})
     aou = load(d, 'aou_summary.json', {})
@@ -171,11 +198,12 @@ def collect(directory):
                          reason='This component is not enabled in this run') for name in MODULES}
     latency_groups = defaultdict(list)
     mappings, event_rows = [], []
-    metadata = {(r['id'], r['begin_tick']): r for r in rows(d, 'request_metadata.csv')}
+    metadata = {(r.get('module','0'), r['id'], r['begin_tick']): r
+                for r in rows(d, 'request_metadata.csv')}
     txns = []
     for i, original in enumerate(rows(d, 'transactions.csv'), 1):
         t = {k: v if k == 'command' else int(v) for k, v in original.items()}
-        meta = metadata.get((str(t['id']), str(t['begin_tick'])), {})
+        meta = metadata.get((str(t.get('module',0)), str(t['id']), str(t['begin_tick'])), {})
         t.update(uid=int(meta.get('uid', i)), source=source(meta.get('source_name', 'unknown')),
                  source_name=meta.get('source_name'), enabled_bytes=int(meta.get('enabled_bytes', t['bytes'])),
                  packet_id=int(meta['packet_id']) if 'packet_id' in meta else None)
@@ -262,7 +290,8 @@ def collect(directory):
                          stall_cycle_fraction=ratio(v['stall_cycles'], cycles),
                          stall_time_fs=v['stall_cycles']*protocol.get('period_ticks', 0))
                 for ch, v in protocol.get('channels', {}).items()}
-    lane_bytes = 32*sum(channels.get(ch, {}).get('handshakes', 0) for ch in ('W', 'R'))
+    axi_lane_bytes = protocol.get('axi_data_bits', 256) // 8
+    lane_bytes = axi_lane_bytes*sum(channels.get(ch, {}).get('handshakes', 0) for ch in ('W', 'R'))
     modules['axi'] = dict(schema=SCHEMA, module='axi', status='measured', data_bits=protocol.get('axi_data_bits'),
                           clock_period_fs=protocol.get('period_ticks'), measured_cycles=cycles, channels=channels,
                           data_lane_bytes=lane_bytes, successful_enabled_byte_efficiency=ratio(effective, lane_bytes),
@@ -585,6 +614,160 @@ def collect(directory):
                    system_total_energy_j=None,system_power_status='Only DRAM has an energy model',
                    metric_consistency_checks=checks, independent_correctness_validation='See *_check.json; metrics consistency is not byte/timing correctness',
                    windows=windows)
+    if topology_links:
+        def link_power_enabled(link):
+            return any(c.get('enabled') for c in link['power'].get('channels', []))
+        for link in topology_links:
+            link_protocol = link['protocol']
+            link_cycles = link_protocol.get('measured_cycles', 0)
+            link_config = link['fabric'].get('link_config', {})
+            raw_peak = (link_config.get('lanes', 0) * link_config.get('rate_gtps', 0) *
+                        link_config.get('bits_per_symbol', 0) * 1e9 / 8)
+            directions = {}
+            for direction in ('forward', 'reverse'):
+                physical_bits = link['fabric'].get('ucie', {}).get(direction, {}).get('total_bits', 0)
+                directions[direction] = dict(
+                    physical_bytes=physical_bits / 8,
+                    physical_bandwidth_Bps=ratio(physical_bits / 8, duration),
+                    physical_utilization=ratio(physical_bits / 8, duration * raw_peak),
+                    new_flits=link['fabric'].get('ucie', {}).get(direction, {}).get('tx_new_flits', 0),
+                    replay_flits=link['fabric'].get('ucie', {}).get(direction, {}).get('tx_replay_flits', 0))
+            link['metrics'] = dict(
+                traffic=traffic([t for t in txns if t.get('module', 0) == link['id']]),
+                effective_bandwidth_Bps=ratio(sum(t['enabled_bytes'] for t in successful
+                                                  if t.get('module', 0) == link['id']), duration),
+                axi_utilization={ch:ratio(link_protocol.get('channels', {}).get(ch, {}).get('handshakes', 0),
+                                          link_cycles) for ch in ('W', 'R')},
+                ucie_raw_peak_Bps=raw_peak or None,
+                ucie=directions,
+                backend_bursts=link['backend'].get('bursts'),
+                backend_children=link['backend'].get('submitted'),
+                dram_commands=link['native'].get('commands'),
+                dram_energy_j=link['power'].get('total_energy_j') if link_power_enabled(link) else None,
+                dram_average_power_w=link['power'].get('average_power_w') if link_power_enabled(link) else None)
+        total_energy = sum(x['power'].get('total_energy_j',0) for x in topology_links
+                           if link_power_enabled(x))
+        any_power = any(link_power_enabled(x) for x in topology_links)
+        # Merge per-node continuous samples without assuming that different
+        # memory standards use the same native period or sampling instants.
+        link_curves = []
+        topology_series = []
+        topology_intervals = []
+        topology_queue_hist = []
+        for link in topology_links:
+            link_series = rows(d/link['result_dir'], 'ramulator_timeseries.csv')
+            link_samples = defaultdict(dict)
+            for sample in link_series:
+                local_channel = int(sample['channel'])
+                tick = int(sample['tick_fs'])
+                link_samples[local_channel][tick] = sample
+                copied = dict(sample)
+                copied['channel'] = f"m{link['id']}/ch{local_channel}"
+                topology_series.append(copied)
+            ticks, totals = [], []
+            for tick in sorted({int(r['tick_fs']) for r in link_series}):
+                entries = [link_samples[ch].get(tick) for ch in sorted(link_samples)]
+                if entries and all(entries):
+                    ticks.append(tick)
+                    totals.append({field:sum(float(r[field]) for r in entries) for field in pfields})
+            if ticks:
+                link_curves.append((ticks, totals, link['power']))
+            for channel, values in link_samples.items():
+                ordered = sorted(values.items())
+                for field in queue_fields:
+                    counts = Counter(int(r[field]) for _, r in ordered)
+                    weighted = Counter()
+                    for (start, r), (finish, _) in zip(ordered, ordered[1:]):
+                        weighted[int(r[field])] += finish-start
+                    for depth, count in sorted(counts.items()):
+                        topology_queue_hist.append(dict(channel=f"m{link['id']}/ch{channel}",
+                            queue=field, depth=depth, samples=count,
+                            estimated_duration_fs=weighted[depth],
+                            method='periodic post-tick samples; zero-order hold duration estimate'))
+                previous = None
+                for tick, row in ordered:
+                    if previous is not None and tick > previous[0]:
+                        start, before = previous
+                        delta = {field:float(row[field])-float(before[field])
+                                 if int(row['power_enabled']) else None for field in pfields}
+                        topology_intervals.append(dict(channel=f"m{link['id']}/ch{channel}",
+                            start_tick_fs=start, end_tick_fs=tick,
+                            duration_seconds=(tick-start)*1e-15,
+                            power_enabled=bool(int(row['power_enabled'])),
+                            average_power_w=ratio(delta['total_energy_j'],(tick-start)*1e-15)
+                            if delta['total_energy_j'] is not None else None, **delta))
+                    previous = tick, row
+
+        def curve_at(ticks, totals, tick):
+            if tick <= ticks[0]: return totals[0]
+            if tick >= ticks[-1]: return totals[-1]
+            hi = bisect_left(ticks, tick)
+            if ticks[hi] == tick: return totals[hi]
+            lo = hi-1
+            fraction = (tick-ticks[lo])/(ticks[hi]-ticks[lo])
+            return {field:totals[lo][field]+fraction*(totals[hi][field]-totals[lo][field])
+                    for field in pfields}
+
+        aggregate_windows = []
+        common_end = min((curve[0][-1] for curve in link_curves), default=0)
+        for window in windows:
+            begin, finish = window['start_tick_fs'], window['end_tick_fs']
+            covered_finish = min(finish, common_end)
+            component = {field:0.0 for field in pfields}
+            covered = bool(link_curves) and covered_finish >= begin
+            exact = covered
+            gaps = []
+            if covered:
+                for ticks, totals, final_power in link_curves:
+                    before, after = curve_at(ticks, totals, begin), curve_at(ticks, totals, covered_finish)
+                    for field in pfields:
+                        component[field] += after[field]-before[field]
+                    exact &= begin in ticks and covered_finish in ticks
+                    gaps.extend(b-a for a,b in zip(ticks,ticks[1:]))
+                if window['name'] == 'full_run' and all(link_power_enabled(x) for x in topology_links):
+                    component = {field:sum(channel.get(field,0) for x in topology_links
+                                           for channel in x['power'].get('channels', []))
+                                 for field in pfields}
+            else:
+                component = {field:None for field in pfields}
+            window_duration = max(0, covered_finish-begin)*1e-15
+            aggregate_windows.append(dict(window, native_covered_end_tick_fs=covered_finish,
+                duration_seconds=window_duration,
+                boundary_method='exact cumulative snapshots across memory nodes' if exact else
+                                'per-node linear interpolation of cumulative energy; estimate',
+                max_boundary_gap_fs=max(gaps, default=0), power_enabled=any_power,
+                average_power_w=ratio(component['total_energy_j'], window_duration)
+                                if component['total_energy_j'] is not None else None,
+                **component))
+        if topology_series:
+            series = topology_series
+            power_intervals = topology_intervals
+            queue_hist = topology_queue_hist
+            power_windows = aggregate_windows
+            enabled = any_power
+        link_requests = [x['metrics']['traffic']['requests'] for x in topology_links]
+        overall['topology'] = dict(
+            resolved=load(d,'topology_resolved.json',{}), summary=topology,
+            aggregation='traffic/capacity sums across concurrent modules; latency distributions retain individual requests; DRAM energy sums independent memory nodes',
+            request_balance=dict(per_module=link_requests,
+                                 min=min(link_requests, default=0), max=max(link_requests, default=0),
+                                 max_to_mean=ratio(max(link_requests, default=0),
+                                                   sum(link_requests)/len(link_requests)) if link_requests else None),
+            links=topology_links)
+        overall['dram_energy_j'] = total_energy if any_power else None
+        overall['dram_average_power_w'] = ratio(total_energy,duration) if any_power else None
+        overall['dram_energy_per_effective_byte_j'] = ratio(total_energy,effective) if any_power else None
+        modules['ucie'] = dict(schema=SCHEMA,module='ucie',status='measured',
+            topology_modules=[dict(id=x['id'],link_config=x['fabric'].get('link_config',{}),
+                                   statistics=x['fabric'].get('ucie',{}),summary=x['aou'])
+                              for x in topology_links],
+            note='Per-module physical bytes, replay, BER and queues are preserved in each link result directory')
+        modules['dram_power'] = dict(schema=SCHEMA,module='dram_power',
+            status='measured' if any_power else 'disabled',total_energy_j=total_energy if any_power else None,
+            average_power_w=ratio(total_energy,duration) if any_power else None,
+            windows=power_windows,
+            memory_nodes=[dict(id=x['id'],statistics=x['power']) for x in topology_links],
+            source_energy_status='Independent memory-node totals are additive; source attribution is not inferred')
     overall['application_roi_status'] = 'measured' if roi_index else 'incomplete' if roi_begin is not None else 'unavailable: workload did not emit application markers'
     overall['traffic_profile'] = traffic_profile
     for value in overall['sources'].values():
@@ -594,6 +777,11 @@ def collect(directory):
                  'aou_events.csv','ucie_flits.csv','ucie_soc.csv','ucie_mem.csv','ramulator_bridge.csv',
                  'ramulator_commands.csv','ramulator_final_image.csv','ramulator_timeseries.csv','stats.txt')
     overall['raw_evidence_bytes'] = sum((d/name).stat().st_size for name in raw_names if (d/name).exists())
+    if topology_links:
+        overall['raw_evidence_bytes'] += sum(
+            (d/x['result_dir']/name).stat().st_size
+            for x in topology_links for name in raw_names
+            if (d/x['result_dir']/name).exists())
     overall['raw_evidence_bytes'] += sum(p.stat().st_size for p in (d/'hettrace').glob('*') if p.is_file() and not p.is_symlink())
     overall['window_statistics'] = []
     for window in windows:
@@ -684,8 +872,14 @@ def collect(directory):
     for ch,value in channels.items():
         stalls.append(dict(module='axi',reason=ch+'_valid_not_ready',cycles=value['stall_cycles'],period_fs=protocol['period_ticks'],duration_fs=value['stall_time_fs']))
     table(d/'stall_reasons.csv',stalls,['module','reason','cycles','period_fs','duration_fs'])
-    evidence = [p for p in d.iterdir() if p.is_file() and p.name in ('metrics_run.json','config.ini','config.json','ramulator_config.yaml','ramulator_model.json','ramulator_stats.yaml','dram_power.json')]
+    evidence = [p for p in d.iterdir() if p.is_file() and p.name in ('metrics_run.json','config.ini','config.json','ramulator_config.yaml','ramulator_model.json','ramulator_stats.yaml','dram_power.json','topology_resolved.json','topology_summary.json')]
     evidence.extend(d/name for name in raw_names if (d/name).exists())
+    for link in topology_links:
+        link_dir = d/link['result_dir']
+        evidence.extend(link_dir/name for name in (*raw_names,'protocol_summary.json','aou_summary.json',
+            'fabric_metrics.json','ramulator_backend_summary.json','ramulator_native_summary.json',
+            'ramulator_model.json','ramulator_stats.yaml','dram_power.json','hbm4_external.yaml')
+            if (link_dir/name).exists())
     evidence.extend(p for p in (d/'hettrace').glob('*') if p.is_file() and not p.is_symlink())
     save(d/'metrics_manifest.json',dict(schema=SCHEMA,time_unit='fs',energy_unit='J',power_unit='W',
         collector_source_sha256=COLLECTOR_SHA256,
@@ -703,7 +897,7 @@ def collect(directory):
             '| 部分 | 状态 | 独立报告 |','|---|---|---|']
     text += [f'| {name} | {v["status"]} | [metrics/{name}.json](metrics/{name}.json) |' for name,v in modules.items()]
     text += ['', '[整体报告](metrics/overall.json) · [全部机器可读指标](metrics.json) · [指标口径与证据](metrics_manifest.json)', '',
-             'DRAM 能耗/平均功率：'+(f'{power["total_energy_j"]:.9g} J / {power["average_power_w"]:.9g} W。' if enabled else '未启用。'), '',
+             'DRAM 能耗/平均功率：'+(f'{overall["dram_energy_j"]:.9g} J / {overall["dram_average_power_w"]:.9g} W。' if overall['dram_energy_j'] is not None else '未启用。'), '',
              '本报告中的整体能耗只汇总 DRAM，其他模块尚无功耗模型。窗口功耗估计见 power_windows.csv；连续采样差分见 power_intervals.csv。', '',
              '原有原生统计、波形、Flit 日志与独立数据校验仍保留。统计一致性检查不代替独立数据/命令时序校验。']
     (d/'metrics_summary.md').write_text('\n'.join(text)+'\n')

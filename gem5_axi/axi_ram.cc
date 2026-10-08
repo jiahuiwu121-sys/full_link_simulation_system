@@ -48,17 +48,18 @@ void Ram::tick() {
                          cycle + latency});
     }
     if (axi.wvalid.read() && axi.wready.read())
-        data.push_back({axi.wdata.read(), axi.wstrb.read().to_uint(), axi.wlast.read()});
+        data.push_back({axi.wdata.read(), axi.wstrb.read(), axi.wlast.read()});
     if (!writes.empty() && !data.empty()) {
         auto& w = writes.front(); auto beat = data.front(); data.pop_front();
         unsigned count = 1u << w.size;
         uint64_t addr = w.address + w.seen * count;
         unsigned lane = addr % DataBytes;
         sc_assert(beat.last == (w.seen + 1 == w.beats));
-        sc_assert((beat.strb & ~(((uint64_t(1) << count) - 1) << lane)) == 0);
+        for (unsigned j = 0; j < DataBytes; ++j)
+            if (beat.strb[j]) sc_assert(j >= lane && j < lane + count);
         if (!contains(addr, count)) w.error = true;
         else for (unsigned j = 0; j < count; ++j)
-            if (beat.strb & (uint32_t(1) << (lane + j)))
+            if (beat.strb[lane + j])
                 bytes[addr - base + j] = beat.data.range(8*(lane+j)+7, 8*(lane+j)).to_uint();
         if (++w.seen == w.beats) {
             responses.push_back({w.id, w.error ? 3u : 0u, cycle + latency});

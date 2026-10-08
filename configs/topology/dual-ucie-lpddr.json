@@ -1,0 +1,29 @@
+{
+  "schema": "storagestacked.topology.v1",
+  "module_count": 2,
+  "axi": {
+    "data_width_bits": 256
+  },
+  "routing": {
+    "stripe_bytes": 4096,
+    "policy": "address_interleave"
+  },
+  "modules": [
+    {
+      "name": "ucie0-lpddr",
+      "ucie": {
+        "lanes": 8,
+        "rate_gtps": 16.0,
+        "modulation": "NRZ"
+      }
+    },
+    {
+      "name": "ucie1-lpddr",
+      "ucie": {
+        "lanes": 8,
+        "rate_gtps": 16.0,
+        "modulation": "NRZ"
+      }
+    }
+  ]
+}

@@ -92,6 +92,32 @@ def runtime_config(args, directory, default_channels=2):
                            args.ramulator_queue, args.ramulator_scale, not args.ramulator_no_power, args.metrics_sample_cycles)
 
 
+def runtime_configs(args, directory, count, default_channels=2, topology=None):
+    """Build one independently traced native memory system per topology module."""
+    explicit = [m.get('memory', {}).get('config', '') for m in (topology or {}).get('modules', [])]
+    if any(explicit):
+        if len(explicit) != count or not all(explicit):
+            raise ValueError('every topology memory node must provide a config when one does')
+        missing = [p for p in explicit if not Path(p).is_file()]
+        if missing:
+            raise ValueError('missing topology Ramulator config: ' + missing[0])
+        return explicit
+    if count == 1:
+        return [runtime_config(args, directory, default_channels)]
+    if args.memory_backend != 'ramulator2':
+        return [''] * count
+    if args.ramulator_config:
+        # A custom immutable input may be instantiated more than once; each
+        # native instance still receives a distinct result directory.
+        return [runtime_config(args, directory, default_channels)] * count
+    root = Path(directory) / 'links'
+    channels = [m.get('memory', {}).get('channels', default_channels)
+                for m in (topology or {}).get('modules', [])]
+    if len(channels) != count:
+        channels = [default_channels] * count
+    return [runtime_config(args, root / f'link{i}', channels[i]) for i in range(count)]
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('directory')

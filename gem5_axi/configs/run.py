@@ -4,13 +4,16 @@ import os
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "env"))
-from generate_ramulator_config import add_options, runtime_config
+from generate_ramulator_config import add_options, runtime_configs
+from topology_config import add_options as add_topology_options
+from topology_config import load as load_topology, simobject_params, interleaved_ranges, write_resolved
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 from collect_metrics import install as install_metrics
 import m5
 from m5.util.convert import toLatency
 from m5.objects import (
     System, SrcClockDomain, VoltageDomain, SimpleMemory, AddrRange, SystemXBar,
+    NoncoherentXBar,
     Root, SystemC_Kernel, Gem5ToTlmBridge64, AxiDemo, AxiPacketTester,
     X86TimingSimpleCPU, SEWorkload, Process, MetricsMarker,
 )
@@ -22,6 +25,7 @@ parser.add_argument("--het-trace", action="store_true",
                     help="Observe target packets using gem5_new HetAxiMonitor")
 parser.add_argument("--backend", choices=["ram", "aou"], default="ram")
 add_options(parser, default_backend="simple")
+add_topology_options(parser)
 parser.add_argument("--memsim-channels", type=int, default=2)
 parser.add_argument("--memsim-scale", type=int, default=1)
 parser.add_argument("--memsim-queue", type=int, default=4)
@@ -45,6 +49,8 @@ parser.add_argument("--traffic-working-set", type=lambda x: int(x, 0), default=1
 parser.add_argument("--traffic-write-percent", type=int, default=50)
 parser.add_argument("--traffic-max-inflight", type=int, default=64)
 args = parser.parse_args()
+topology = load_topology(args)
+module_count = len(topology['modules'])
 if args.memory_backend in ("memsim", "ramulator2") and args.backend != "aou":
     parser.error("online memory requires --backend aou")
 if min(args.memsim_channels, args.memsim_scale, args.memsim_queue, args.memsim_slots) < 1 or args.memsim_response_hold < 0:
@@ -61,11 +67,16 @@ if args.mode == "traffic":
         parser.error("--traffic-write-percent must be in [0, 100]")
     if args.traffic_working_set % args.traffic_size or args.traffic_size > 4096:
         parser.error("traffic working set must be a multiple of request size; size must be <= 4096")
+    if module_count > 1 and args.traffic_size > topology['routing']['stripe_bytes']:
+        parser.error("traffic request size cannot exceed the topology stripe size")
+    if module_count > 1 and topology['routing']['stripe_bytes'] % args.traffic_size:
+        parser.error("traffic request size must divide the topology stripe to avoid cross-node packets")
 
 # Set before constructing any SystemC time objects or fixing gem5 frequency.
 m5.ticks.setGlobalFrequency(10**15)
 out = os.path.abspath(m5.options.outdir)
 os.makedirs(out, exist_ok=True)
+write_resolved(topology, out)
 base = 0x90000000
 target_size = args.target_size if args.target_size is not None else (args.traffic_working_set if args.mode == "traffic" else 8192)
 minimum_target_size = args.traffic_working_set if args.mode == "traffic" else 8192
@@ -82,7 +93,9 @@ system.axi = AxiDemo(
     base=base, size=target_size, period=args.period, outstanding=args.slots,
     backend=args.backend, planes=args.planes, replay=args.replay,
     memory_backend=args.memory_backend,
-    ramulator_config=runtime_config(args, out), ramulator_slots=args.ramulator_slots,
+    ramulator_config='',
+    ramulator_configs=runtime_configs(args, out, module_count, topology=topology),
+    **simobject_params(topology), ramulator_slots=args.ramulator_slots,
     ramulator_children=args.ramulator_children, ramulator_submit_width=args.ramulator_submit_width,
     ramulator_response_hold=args.ramulator_response_hold,
     memsim_channels=args.memsim_channels,
@@ -90,9 +103,22 @@ system.axi = AxiDemo(
     memsim_slots=args.memsim_slots, memsim_response_hold=args.memsim_response_hold,
     latency=args.latency, stalls=not args.no_stalls, trace_dir=out,
 )
-system.bridge = Gem5ToTlmBridge64(addr_ranges=[target_range])
-system.bridge.tlm = system.axi.tlm
-target_port = system.bridge.gem5
+module_ranges = interleaved_ranges(AddrRange, [target_range], topology)
+system.bridges = [Gem5ToTlmBridge64(addr_ranges=ranges) for ranges in module_ranges]
+for i, bridge in enumerate(system.bridges):
+    bridge.tlm = system.axi.tlm[i]
+if module_count == 1:
+    target_port = system.bridges[0].gem5
+else:
+    # Pure address demultiplexer: size it for all parallel AXI lanes and add
+    # no hidden latency/capacity bottleneck ahead of the modeled links.
+    system.target_xbar = NoncoherentXBar(
+        width=(args.axi_data_width // 8) * module_count,
+        frontend_latency=0, forward_latency=0, response_latency=0,
+        header_latency=0)
+    for bridge in system.bridges:
+        system.target_xbar.mem_side_ports = bridge.gem5
+    target_port = system.target_xbar.cpu_side_ports
 if args.het_trace:
     from m5.objects import HetAxiMonitor
     trace_path = os.path.join(out, "hettrace")
@@ -101,14 +127,15 @@ if args.het_trace:
     os.environ["HETTRACE_FILTER"] = "all"
     os.environ["HETTRACE_FORMAT"] = "binary"
     system.het_monitor = HetAxiMonitor(unique_packet_ids=True)
-    system.het_monitor.mem_side_port = system.bridge.gem5
+    system.het_monitor.mem_side_port = target_port
     target_port = system.het_monitor.cpu_side_port
 
 if args.mode in ("tester", "traffic"):
     period_fs = round(toLatency(args.period) * 1e15)
     # One request occupies request_size/32 ideal AXI data beats. The requested
     # load is defined against that payload capacity, independent of protocol overhead.
-    issue_interval_fs = max(1, round((args.traffic_size / 32) * period_fs * 100 / args.traffic_load_percent))
+    issue_interval_fs = max(1, round((args.traffic_size / (args.axi_data_width // 8)) *
+                                     period_fs * 100 / args.traffic_load_percent))
     system.tester = AxiPacketTester(
         base=base, trace_dir=out,
         response_hold=args.response_hold if args.mode == "tester" else "0ns",

@@ -75,7 +75,8 @@ def write_dashboard(directory, report=None):
                 ('queue_occupancy.csv','队列CSV'),('axi_wave.vcd','AXI波形')]
     candidates += [('link_diagnostics.json','带宽与延迟口径'),('bandwidth_timeseries.csv','带宽CSV'),
                    ('request_latency_partition.csv','请求延迟分解CSV'),('protocol_latency_samples.csv','协议延迟CSV'),
-                   ('dram_data_bursts.csv','DRAM数据占用CSV')]
+                   ('dram_data_bursts.csv','DRAM数据占用CSV'),('topology_resolved.json','拓扑配置'),
+                   ('topology_summary.json','拓扑汇总'),('topology_check.json','拓扑独立校验')]
     page(d, '全链路实验指标 · '+d.name, 'case', [(n,l) for n,l in candidates if (d/n).exists()])
 
 

@@ -233,7 +233,7 @@ def analyze(txns, mappings, axi, flits, commands, protocol, fabric, models, nati
         status=('balanced_ingress' if ingress_known and .8 <= ratio_axi_ucie <= 1.25 and
                 backend_peak >= min(axi_peak, ucie_peak) and dram_peak >= min(axi_peak, ucie_peak)
                 else 'unbalanced_or_unknown'),
-        bottleneck=min(((name, value) for name,value in [('AXI256 per direction',axi_peak),
+        bottleneck=min(((name, value) for name,value in [(f'AXI{protocol.get("axi_data_bits",256)} per direction',axi_peak),
                        ('UCIe per direction',ucie_peak),('backend dispatch',backend_peak),
                        ('aggregate DRAM data buses',dram_peak)] if value is not None),
                        key=lambda x:x[1])[0] if any(v is not None for v in (axi_peak,ucie_peak,backend_peak,dram_peak)) else None,

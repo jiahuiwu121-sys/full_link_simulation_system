@@ -34,7 +34,7 @@ class Master : public sc_core::sc_module {
     std::function<unsigned(tlm::tlm_generic_payload&)> functional;
     SC_HAS_PROCESS(Master);
     Master(sc_core::sc_module_name, unsigned slots, bool stalls,
-           const std::string& traceDir);
+           const std::string& traceDir, unsigned moduleIndex = 0);
     bool idle() const { return active.empty() && pending == nullptr; }
     unsigned maxId = 65535; // Inclusive wire-ID limit; set before simulation.
     uint64_t accepted = 0, completed = 0, maxActive = 0;
@@ -64,6 +64,7 @@ class Master : public sc_core::sc_module {
     std::ofstream segments;
     std::ofstream metadata;
     uint64_t nextUid = 1;
+    unsigned moduleIndex = 0;
     tlm::tlm_sync_enum transport(tlm::tlm_generic_payload&, tlm::tlm_phase&,
                                 sc_core::sc_time&);
     void blocking(tlm::tlm_generic_payload&, sc_core::sc_time&);

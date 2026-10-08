@@ -7,18 +7,21 @@ import shlex
 import sys
 from types import SimpleNamespace
 import m5
-from m5.objects import (AddrRange,AxiDemo,Root,SEWorkload,Process,System,SystemXBar,
+from m5.objects import (AddrRange,AxiDemo,Root,SEWorkload,Process,System,SystemXBar,NoncoherentXBar,
                        SimpleMemory,SrcClockDomain,VoltageDomain,SystemC_Kernel,
                        Gem5ToTlmBridge64,HetAxiMonitor,MetricsMarker)
 root_path=Path(__file__).resolve().parents[2]
 spec=importlib.util.spec_from_file_location('het_frontends',root_path/'gem5_new/gem5int/configs/het/het_system.py')
 front=importlib.util.module_from_spec(spec);spec.loader.exec_module(front)
 sys.path.insert(0, str(root_path/'env'))
-from generate_ramulator_config import add_options, runtime_config
+from generate_ramulator_config import add_options, runtime_configs
+from topology_config import add_options as add_topology_options
+from topology_config import load as load_topology, simobject_params, interleaved_ranges, write_resolved
 sys.path.insert(0, str(root_path/'gem5_axi/scripts'))
 from collect_metrics import install as install_metrics
 p=argparse.ArgumentParser()
 add_options(p)
+add_topology_options(p)
 p.add_argument('--cmd',required=True)
 p.add_argument('--options',default='')
 p.add_argument('--vortex-library',default='')
@@ -32,12 +35,15 @@ p.add_argument('--replay',action='store_true')
 p.add_argument('--axi-period',default='666667fs',
                help='AXI256 clock period; default matches the 48 GB/s UCIe raw capacity')
 a=p.parse_args()
+topology=load_topology(a)
+module_count=len(topology['modules'])
 args=SimpleNamespace(**vars(a),env=[],vortex_fast_forward=False,vortex_kernel='',
     vortex_bar_skew=0,npu_auto_start=False,npu_no_share=False)
 for filename in (a.cmd,a.vortex_library,a.npu_library,a.npu_kernel):
     if filename and not Path(filename).is_file():raise RuntimeError('Missing '+filename)
 if a.vortex_library and a.num_cpus<2:raise RuntimeError('Vortex runtime needs at least two CPU contexts')
 out=Path(m5.options.outdir).resolve();out.mkdir(parents=True,exist_ok=True)
+write_resolved(topology,out)
 m5.ticks.setGlobalFrequency('1fs')
 (out/'hettrace').mkdir(exist_ok=True)
 os.environ['HETTRACE_DIR']=str(out/'hettrace')
@@ -60,18 +66,28 @@ if a.vortex_library:ranges.append(AddrRange(front.VORTEX_BAR[0],size=front.VORTE
 size=0x170000000 if a.vortex_library else 0x30000000
 system.axi=AxiDemo(backend='aou',memory_backend=a.memory_backend,base=0x90000000,size=size,
     period=a.axi_period,
-    ramulator_config=runtime_config(a,out,8 if a.vortex_library else 2),
+    ramulator_config='',ramulator_configs=runtime_configs(a,out,module_count,8 if a.vortex_library else 2,topology=topology),
+    **simobject_params(topology),
     ramulator_slots=a.ramulator_slots,ramulator_children=a.ramulator_children,
     ramulator_submit_width=a.ramulator_submit_width,
     ramulator_response_hold=a.ramulator_response_hold,
     memsim_channels=8 if a.vortex_library else 2,memsim_scale=a.memsim_scale,
     memsim_queue=4,memsim_slots=8,outstanding=16,planes=2,stalls=True,replay=a.replay,
     trace_dir=str(out))
-system.bridge=Gem5ToTlmBridge64(addr_ranges=ranges)
-system.bridge.tlm=system.axi.tlm
+module_ranges=interleaved_ranges(AddrRange,ranges,topology)
+system.bridges=[Gem5ToTlmBridge64(addr_ranges=r) for r in module_ranges]
+for i,bridge in enumerate(system.bridges):bridge.tlm=system.axi.tlm[i]
+if module_count==1:
+    target_port=system.bridges[0].gem5
+else:
+    system.target_xbar=NoncoherentXBar(
+        width=(a.axi_data_width//8)*module_count,
+        frontend_latency=0,forward_latency=0,response_latency=0,header_latency=0)
+    for bridge in system.bridges:system.target_xbar.mem_side_ports=bridge.gem5
+    target_port=system.target_xbar.cpu_side_ports
 system.het_monitor=HetAxiMonitor(unique_packet_ids=True,trace_host=True,
     trace_vortex=bool(a.vortex_library),trace_coralnpu=bool(a.npu_library))
-system.het_monitor.mem_side_port=system.bridge.gem5
+system.het_monitor.mem_side_port=target_port
 system.het_monitor.cpu_side_port=system.membus.mem_side_ports
 system.workload=SEWorkload.init_compatible(a.cmd)
 env=front.host_env(args)

@@ -1,0 +1,29 @@
+{
+  "schema": "storagestacked.topology.v1",
+  "module_count": 2,
+  "axi": {
+    "data_width_bits": 256
+  },
+  "routing": {
+    "stripe_bytes": 256,
+    "policy": "address_interleave"
+  },
+  "modules": [
+    {
+      "name": "ucie0-hbm4",
+      "ucie": {
+        "lanes": 16,
+        "rate_gtps": 32.0,
+        "modulation": "NRZ"
+      }
+    },
+    {
+      "name": "ucie1-hbm4",
+      "ucie": {
+        "lanes": 16,
+        "rate_gtps": 32.0,
+        "modulation": "NRZ"
+      }
+    }
+  ]
+}

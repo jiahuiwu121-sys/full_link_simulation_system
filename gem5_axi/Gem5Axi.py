@@ -1,5 +1,5 @@
 from m5.objects.SystemC import SystemC_ScModule
-from m5.objects.Tlm import TlmTargetSocket
+from m5.objects.Tlm import VectorTlmTargetSocket
 from m5.objects.Device import BasicPioDevice
 from m5.SimObject import SimObject, PyBindMethod
 from m5.params import *
@@ -12,12 +12,20 @@ class AxiDemo(SystemC_ScModule):
     cxx_header = 'gem5_axi/axi_demo.hh'
     cxx_exports = [PyBindMethod('finish')]
     system = Param.System(Parent.any, 'Requestor names for metrics')
-    tlm = TlmTargetSocket(64, 'Nonblocking transaction input')
+    tlm = VectorTlmTargetSocket(64, 'One nonblocking transaction input per AXI/UCIe module')
+    topology_modules = Param.Unsigned(1, 'Number of parallel AXI/UCIe modules')
+    ucie_lanes = VectorParam.Unsigned([16], 'Physical lanes for every UCIe module')
+    ucie_rates = VectorParam.Float([24.0], 'Per-lane transfer rate in GT/s')
+    ucie_bits_per_symbol = VectorParam.Unsigned([1], '1=NRZ, 2=PAM4 for every module')
+    topology_policy = Param.String('single', 'single, address_interleave or source_ranges')
+    topology_stripe_bytes = Param.UInt64(256, 'Address interleave stripe size')
+    topology_resolved = Param.String('', 'Resolved topology JSON copied into the result')
     backend = Param.String('ram', 'ram or aou full UCIe path')
     planes = Param.Unsigned(1, 'AoU resource planes (1..4)')
     replay = Param.Bool(False, 'Inject reproducible 2% physical flit errors')
     memory_backend = Param.String('simple', 'simple, ramulator2 or optional memsim after UCIe')
     ramulator_config = Param.String('', 'Fully expanded External Ramulator2 config')
+    ramulator_configs = VectorParam.String([], 'One expanded Ramulator2 config per memory node')
     ramulator_slots = Param.Unsigned(8, 'Bounded in-flight AXI bursts')
     ramulator_children = Param.Unsigned(32, 'Bounded native transactions')
     ramulator_submit_width = Param.Unsigned(8, 'Maximum native child submissions per DRAM tick')

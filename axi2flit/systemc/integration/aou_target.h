@@ -81,7 +81,7 @@ private:
         FdiFlit fdi;
         if (!link_rx.nb_read(fdi)) return;
         require(fdi.payload.size() == 250 && fdi.valid_bytes == 250, "Target FDI size");
-        AouWireFlit bytes;
+        AouWireFlit bytes{};
         std::copy(fdi.payload.begin(), fdi.payload.end(), bytes.begin());
         auto flit = deserialize_aou(bytes);
         require(flit.fdid == 0, "Target unsupported FDId");

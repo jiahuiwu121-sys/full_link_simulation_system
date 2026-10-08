@@ -16,6 +16,17 @@ SS_EXPERIMENT_LABEL=bandwidth-sweep bash env/run_bandwidth_sweep.sh
 
 该入口按10%到125%六档供给负载运行，使用预热/稳态测量/冷却三个阶段，最终报告为新批次目录中的 `index.html`、`bandwidth_sweep.json`、`bandwidth_sweep.csv` 和 `bandwidth_sweep.md`。默认AXI256周期为666667fs；`--ramulator-submit-width 8` 允许每个native tick最多尝试八个独立child。
 
+并行 AXI/UCIe/memory-node 拓扑使用专用入口；默认读取双模块 HBM4 样例，完成后自动执行
+逐链路数据/VCD/Flit/Ramulator/功耗校验和根目录聚合守恒检查：
+
+```bash
+SS_EXPERIMENT_LABEL=dual-hbm4 bash env/run_topology.sh
+bash env/run_topology.sh results/20261008-dual-hbm4-r01 \
+  configs/topology/dual-ucie-hbm4.json
+```
+
+配置文件、环境变量和输出说明见[第二阶段拓扑扩展](../docs/topology-extension.md)。
+
 三源包含 CPU 基础构建：
 
 ```bash

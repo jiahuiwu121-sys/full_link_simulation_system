@@ -57,11 +57,13 @@ static void format_unit(const Config& cfg) {
         check(check_flit(old, bytes).crc_ok, "原有格式未被 AoU 分支覆盖");
     }
     Config wrong = cfg; wrong.modulation = cfg.modulation == Modulation::NRZ ? Modulation::PAM4 : Modulation::NRZ;
-    rejects([&] { require_aou_ucie_config(wrong); }, "调制配置不一致拒绝");
+    require_aou_ucie_config(wrong);
     wrong = cfg; ++wrong.num_lanes;
-    rejects([&] { require_aou_ucie_config(wrong); }, "lane 数不一致拒绝");
+    require_aou_ucie_config(wrong);
     wrong = cfg; wrong.lane_rate_gtps += 1;
-    rejects([&] { require_aou_ucie_config(wrong); }, "速率不一致拒绝");
+    require_aou_ucie_config(wrong);
+    check(make_aou_ucie_config(8, 32.0, 1).num_lanes == 8,
+          "运行期 UCIe 几何配置生效");
     wrong = cfg; wrong.flit_format = FlitFormat::Standard256;
     rejects([&] { require_aou_ucie_config(wrong); }, "236B 配置拒绝");
     check(std::abs(cfg.num_lanes * cfg.lane_rate_gtps * cfg.bits_per_ui() / 8.0 -

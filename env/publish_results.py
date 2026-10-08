@@ -29,15 +29,28 @@ def publish(directory, skip_views=False, open_browser=True, serve=True, port=800
                 with (case/'visualization.log').open('w') as log:
                     def run(script, *flags):
                         subprocess.run([sys.executable,str(SCRIPTS/(script+'.py')),str(case),*flags],stdout=log,stderr=log,check=True)
-                    if report['overall']['traffic']['requests'] and (case/'axi_wave.vcd').exists() and (case/'aou_events.csv').exists():
+                    topology = json.loads((case/'topology_summary.json').read_text()) if (case/'topology_summary.json').exists() else {}
+                    multi = topology.get('modules', 1) > 1
+                    if multi:
+                        run('check_topology')
+                        for descriptor in topology['links']:
+                            link = case / descriptor['result_dir']
+                            scripts = ['trace_view']
+                            if (link/'ramulator_commands.csv').exists():
+                                scripts.append('ramulator_view')
+                            for script in scripts:
+                                subprocess.run([sys.executable, str(SCRIPTS/(script+'.py')), str(link)],
+                                               stdout=log, stderr=log, check=True)
+                    elif report['overall']['traffic']['requests'] and (case/'axi_wave.vcd').exists() and (case/'aou_events.csv').exists():
                         run('check', *(['--directed'] if arguments.get('mode')=='tester' else []))
                         run('check_aou', *(['--replay'] if arguments.get('replay') else []))
                         run('inspect_link')
                         run('trace_view')
-                    if (case/'ramulator_commands.csv').exists():
+                    if not multi and (case/'ramulator_commands.csv').exists():
                         run('check_ramulator')
                         run('ramulator_view')
-                    run('check_metrics')
+                    if not multi:
+                        run('check_metrics')
             write_dashboard(case, report)
             write_json(case/'visualization_status.json',dict(status='generated',metrics_status=report['status'],entry='metrics.html'))
         except Exception as error:

@@ -15,6 +15,7 @@ for dependency in yaml-cpp fmt dramutils nlohmann_json; do
     ramulator_sources+=("-DFETCHCONTENT_SOURCE_DIR_${dependency^^}=$SS_DEPS_ROOT/ramulator2-sources/$dependency")
 done
 backend_args=("SS_HAVE_MEMSIM=0")
+backend_args+=("SS_AXI_DATA_WIDTH=${SS_AXI_DATA_WIDTH:-256}")
 case "$SS_MEMORY_BACKEND" in
 ramulator2)
     cmake -S "$RAMULATOR_HOME" -B "$RAMULATOR_BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -26,7 +27,7 @@ memsim)
     # The legacy backend remains optional and requires matching external delivery.
     cmake -S "$MEMSIM_HOME" -B "$MEMSIM_BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_CXX_COMPILER=$AXI_CXX"
     cmake --build "$MEMSIM_BUILD" -j "${AXI_JOBS:-6}"
-    backend_args=("SS_HAVE_MEMSIM=1")
+    backend_args=("SS_HAVE_MEMSIM=1" "SS_AXI_DATA_WIDTH=${SS_AXI_DATA_WIDTH:-256}")
     # The gem5 binary supports both branches when legacy support is enabled.
     cmake -S "$RAMULATOR_HOME" -B "$RAMULATOR_BUILD" -G Ninja "-DCMAKE_CXX_COMPILER=$AXI_CXX" \
         -DRAMULATOR_PYTHON_BINDINGS=OFF -DRAMULATOR_ONLINE_INTEGRATION=ON "${ramulator_sources[@]}"

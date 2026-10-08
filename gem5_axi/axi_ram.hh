@@ -16,7 +16,7 @@ class Ram : public sc_core::sc_module {
   private:
     struct Address { uint64_t address; unsigned id, beats, size, seen = 0;
                      uint64_t ready = 0; bool error = false; };
-    struct WriteBeat { Data data; uint32_t strb; bool last; };
+    struct WriteBeat { Data data; Strb strb; bool last; };
     struct WriteResponse { unsigned id, resp; uint64_t ready; };
     uint64_t base, cycle = 0;
     unsigned latency;

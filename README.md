@@ -1,11 +1,17 @@
 # full_link_simulation_system
 
-CPU / Vortex GPU / CoralNPU → 原生AXI256 → AXI2Flit → UCIe → 在线Ramulator2 + 真实数据backing + DRAMPower的统一系统。
+CPU / Vortex GPU / CoralNPU → 原生可配置宽度AXI → AXI2Flit → 可配置并行UCIe模块 → 在线Ramulator2 memory nodes + 唯一数据backing + DRAMPower的统一系统。
+
+第二阶段拓扑扩展已经完成：支持 1/2/4/... 个独立 TLM、AXI、UCIe 和内存节点，按地址
+条带路由；AXI 可在构建时选择 256/512/1024 bit，UCIe 的 lane、速率和调制可按模块配置。
+每条路径均保留独立原始证据和统计，根目录聚合吞吐/延迟/功耗；在线页面显示逐链路利用率，
+`check_topology.py` 校验地址归属及跨层守恒。配置格式、运行命令、输出证据和当前边界见
+[拓扑扩展说明](docs/topology-extension.md)。
 
 | 普通源码目录 | 职责 |
 |---|---|
 | gem5_new | 三源设备、观察器、工作负载及外部依赖适配 |
-| gem5_axi | gem5原生TLM、AXI256 Master、在线内存桥及验证 |
+| gem5_axi | gem5原生TLM、可配置宽度AXI Master、在线内存桥及验证 |
 | axi2flit | AXI与Flit转换 |
 | ucie-model | UCIe链路、重放与观察接口 |
 | gem5 | CPU、事件队列、原生SystemC/TLM及设备框架 |

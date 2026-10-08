@@ -14,7 +14,7 @@ def check(directory, replay=False):
             return list(csv.DictReader(f))
     narrow = rows('axi_events.csv')
     data_bits = json.loads((directory/'protocol_summary.json').read_text()).get('axi_data_bits',64)
-    assert data_bits in (64,256)
+    assert data_bits in (64,256,512,1024)
     wide = rows('aou_events.csv')
     bus = [r for r in wide if r['channel'] in ('AW','W','B','AR','R')]
     assert len(narrow) == len(bus)

@@ -5,9 +5,11 @@
 
 namespace storage_axi {
 using namespace sc_core;
-Master::Master(sc_module_name n, unsigned s, bool st, const std::string& dir)
+Master::Master(sc_module_name n, unsigned s, bool st, const std::string& dir,
+               unsigned module_index)
     : sc_module(n), slots(s), stalls(st), trace(dir + "/transactions.csv"),
-      segments(dir + "/request_segments.csv"), metadata(dir + "/request_metadata.csv") {
+      segments(dir + "/request_segments.csv"), metadata(dir + "/request_metadata.csv"),
+      moduleIndex(module_index) {
     if (slots == 0 || slots > 65534 || !trace || !segments || !metadata) throw std::runtime_error("invalid master configuration/metrics output");
     trace << "id,command,address,bytes,begin_tick,accepted_tick,axi_done_tick,end_resp_tick,segments,requestor,stream,substream,status\n";
     metadata << "uid,id,begin_tick,source_name,enabled_bytes,packet_id\n";
@@ -93,7 +95,8 @@ void Master::admit() {
     if (!nextId || nextId > maxId) nextId = 1;
     while (active.count(nextId)) nextId = nextId == maxId ? 1 : nextId + 1;
     auto t = std::make_unique<Txn>();
-    t->gp = gp; t->id = nextId++; t->uid = nextUid++;
+    t->gp = gp; t->id = nextId++;
+    t->uid = (uint64_t(moduleIndex) << 56) | nextUid++;
     t->begin = pendingBegin; t->accept = sc_time_stamp().value();
     bool valid = (gp->is_read() || gp->is_write()) && gp->get_data_ptr() &&
                  gp->get_data_length() && gp->get_data_length() <= 65536 &&
@@ -191,13 +194,13 @@ void Master::drive() {
     axi.wvalid = false;
     if (!wq.empty()) {
         auto& t = *active.at(wq.front()); auto& b = t.bursts[t.segment];
-        Data data = 0; uint32_t strb = 0;
+        Data data = 0; Strb strb = 0;
         unsigned lane = (b.address + t.wbeat * b.bytes) % DataBytes;
         for (unsigned j = 0; j < b.bytes; ++j) {
             unsigned off = b.offset + t.wbeat * b.bytes + j;
             data.range(8*(lane+j)+7, 8*(lane+j)) = t.gp->get_data_ptr()[off];
             auto* mask = t.gp->get_byte_enable_ptr();
-            if (!mask || mask[off % t.gp->get_byte_enable_length()]) strb |= uint32_t(1) << (lane + j);
+            if (!mask || mask[off % t.gp->get_byte_enable_length()]) strb[lane + j] = 1;
         }
         axi.wdata = data; axi.wstrb = strb; axi.wlast = t.wbeat + 1 == b.beats;
         axi.wvalid = cycle >= t.wAfter;
