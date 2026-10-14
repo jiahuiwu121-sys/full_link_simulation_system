@@ -57,7 +57,7 @@ def command_check(commands, models):
                         assert cycle - history[-window] >= latency, f'{c["command"]} timing constraint violated at level {level}'
         banks = targets(bank)
         name = c['command']
-        if name == 'ACT':
+        if name in ('ACT', 'ACT2'):
             assert coords[row] >= 0
             for node in banks:
                 assert (channel,node) not in opened, 'ACT to opened bank'
@@ -65,10 +65,10 @@ def command_check(commands, models):
         elif name.startswith('PRE'):
             for node in banks:
                 opened.pop((channel,node), None)
-        elif name in ('RD','WR','RDA','WRA'):
+        elif name.startswith(('RD', 'WR')):
             for node in banks:
                 assert opened.get((channel,node)) == coords[row], 'access to wrong/closed row'
-            if name in ('RDA','WRA'):
+            if name.startswith(('RDA', 'WRA')):
                 for node in banks:
                     opened.pop((channel,node), None)
         elif name.startswith(('REF','RFM')):
@@ -137,12 +137,12 @@ def check(directory):
     physical = defaultdict(list)
     for c in commands:
         assert int(c['tick']) == int(c['cycle']) * period
-        if c['command'] in ('RD','WR','RDA','WRA'): physical[c['token']].append(c)
+        if c['command'].startswith(('RD', 'WR')): physical[c['token']].append(c)
     assert physical.keys() == children.keys(), 'unaccounted actual DRAM access'
     for token,s in children.items():
         e = services[token]; assert len(physical[token]) == 1
         c = physical[token][0]
-        assert c['command'] == ('WR' if s['command'] == 'W' else 'RD')
+        assert c['command'].startswith('WR' if s['command'] == 'W' else 'RD')
         relative = int(s['address']) - base
         assert int(c['address']) == relative - relative % granule
         assert all(s[k] == e[k] for k in ('burst','address','bytes','offset','command'))
@@ -211,7 +211,15 @@ def check(directory):
         assert math.isclose(c['total_energy_j'],c['core_energy_j']+c['interface_energy_j'],rel_tol=1e-10,abs_tol=1e-20)
         if c['enabled']:
             assert math.isclose(c['duration_seconds'],duration,rel_tol=1e-10,abs_tol=1e-18)
-            assert c['mapped_commands'] == sum(int(r['channel']) == c['channel'] for r in commands)
+            channel_commands = [r for r in commands if int(r['channel']) == c['channel']]
+            # LPDDR emits controller-only CAS synchronization commands. The
+            # DRAMPower coupling intentionally omits these because they do not
+            # map to a DRAMPower memory command; all physical DRAM commands
+            # must still be accounted for.
+            if models[c['channel']]['standard'] in ('LPDDR5', 'LPDDR6'):
+                channel_commands = [r for r in channel_commands
+                                    if not r['command'].startswith('CAS')]
+            assert c['mapped_commands'] == len(channel_commands)
             assert c['unsupported_commands'] == 0
             spec = json.loads((directory/f'ramulator_memspec_channel_{c["channel"]}.json').read_text())
             if models[c['channel']]['standard'] in ('HBM3','HBM4'):

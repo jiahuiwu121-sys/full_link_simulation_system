@@ -1,10 +1,17 @@
 Import('*')
+from SCons.Script import ARGUMENTS
+
+axi_width = int(ARGUMENTS.get('SS_AXI_DATA_WIDTH', '256'))
+if axi_width not in (256, 512, 1024):
+    raise ValueError('SS_AXI_DATA_WIDTH must be 256, 512 or 1024')
+width_compile = {'CPPDEFINES': [('AXI_DATA_WIDTH_CFG', axi_width)]}
+
 env.Append(CPPPATH=[Dir('#/src/systemc/ext')])
 SimObject('Gem5Axi.py', sim_objects=['AxiDemo', 'AxiPacketTester', 'MetricsMarker'])
 Source('metrics_marker.cc')
-Source('axi_master.cc')
-Source('axi_ram.cc')
-Source('axi_demo.cc')
+Source('axi_master.cc', append=width_compile)
+Source('axi_ram.cc', append=width_compile)
+Source('axi_demo.cc', append=width_compile)
 Source('packet_tester.cc')
 
 
@@ -15,22 +22,17 @@ env.Append(CPPPATH=[os.path.join(project_root, 'gem5_new/libhettrace/include')])
 aou_root = os.path.join(project_root, 'axi2flit/systemc')
 ucie_root = os.path.join(project_root, 'ucie-model/src')
 env.Append(CPPPATH=[os.path.join(project_root, 'protocol/include'), aou_root + '/include', aou_root + '/integration', ucie_root])
-Source('aou_backend.cc')
-Source('aou_axi2flit.cc')
-Source('aou_flit_packer.cc')
-Source('aou_flit_unpacker.cc')
-Source('ramulator_backend.cc')
+Source('aou_backend.cc', append=width_compile)
+Source('aou_axi2flit.cc', append=width_compile)
+Source('aou_flit_packer.cc', append=width_compile)
+Source('aou_flit_unpacker.cc', append=width_compile)
+Source('ramulator_backend.cc', append=width_compile)
 env.Append(CPPPATH=[project_root])
 ramulator_build = os.path.join(project_root, 'build', 'ramulator2', 'lib')
 env.Append(LIBPATH=[ramulator_build], LIBS=['storagestacked_ramulator2'], RPATH=[ramulator_build])
-from SCons.Script import ARGUMENTS
-axi_width = int(ARGUMENTS.get('SS_AXI_DATA_WIDTH', '256'))
-if axi_width not in (256, 512, 1024):
-    raise ValueError('SS_AXI_DATA_WIDTH must be 256, 512 or 1024')
-env.Append(CPPDEFINES=[('AXI_DATA_WIDTH_CFG', axi_width)])
 if ARGUMENTS.get('SS_HAVE_MEMSIM', '0') == '1':
     env.Append(CPPDEFINES=['SS_HAVE_MEMSIM'])
-    Source('memsim_backend.cc')
+    Source('memsim_backend.cc', append=width_compile)
     memsim_root = os.path.join(project_root, 'mem_sim')
     env.Append(CPPPATH=[memsim_root + '/integration'])
     env.Append(LIBPATH=[memsim_root + '/build-unified'], LIBS=['storagestacked_memsim'])

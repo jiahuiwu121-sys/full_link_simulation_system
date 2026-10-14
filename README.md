@@ -8,6 +8,10 @@ CPU / Vortex GPU / CoralNPU → 原生可配置宽度AXI → AXI2Flit → 可配
 `check_topology.py` 校验地址归属及跨层守恒。配置格式、运行命令、输出证据和当前边界见
 [拓扑扩展说明](docs/topology-extension.md)。
 
+拓扑可用 `memory.standard` 直接生成 HBM4、LPDDR5 或 LPDDR6 的 Ramulator2 External 配置
+及匹配功耗输入。`env/run_configuration_matrix.sh` 验收 1/2/4/8 模块与 RP1/2/4 的组合，
+`env/run_axi_width_matrix.sh` 重建并验收 AXI256/512/1024 后恢复默认位宽。
+
 | 普通源码目录 | 职责 |
 |---|---|
 | gem5_new | 三源设备、观察器、工作负载及外部依赖适配 |

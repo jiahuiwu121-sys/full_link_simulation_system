@@ -43,9 +43,18 @@ AXI beat，并且不能小于工作负载可能产生的单个目标请求，否
 - `ucie.lanes`：该物理模块的 lane 数；
 - `ucie.rate_gtps`：每 lane 传输率；
 - `ucie.modulation`：`NRZ` 或 `PAM4`；
-- `memory.channels`：自动生成 HBM4 Ramulator 配置时，该节点的 controller 数；
+- `memory.standard`：自动生成 External 配置的内存标准，可选 `HBM4`、`LPDDR5`、`LPDDR6`；
+- `memory.channels`：该节点自动生成配置中的 controller/subchannel 数，必须为正二次幂；
 - `memory.config`：相对于拓扑文件的完整 Ramulator External 配置。可用它接入
-  LPDDR5、LPDDR6 或不同 HBM 配置；一旦任一节点指定，所有节点都必须指定，避免静默混用。
+  自定义时序；一旦任一节点指定，所有节点都必须指定，避免静默混用。
+
+未提供 `memory.config` 时，`env/generate_ramulator_config.py` 会为每个 memory node 生成真正的
+Ramulator2 `External` 配置、匹配的 DRAMPower memspec 和带哈希的配置元数据。LPDDR5 使用
+`LPDDR5_16Gb_x16 / LPDDR5_6400`，LPDDR6 使用
+`LPDDR6_16Gb_x12 / LPDDR6_10667_BL24`；LPDDR6 的两个 controller 对应一个物理 x24
+通道的两个 x12 subchannel。LPDDR 功耗使用仓库公开参考参数，绝对精度未作目标厂商标定，
+这一限制会写入结果元数据。LPDDR 不允许使用 HBM4 专用的 `--ramulator-scale`，避免伪造
+未验证的时序预设。
 
 AXI 数据宽度可选 256、512、1024 bit，但 SystemC 端口类型在 C++ 编译时固定，所以必须先：
 
@@ -56,13 +65,16 @@ SS_AXI_DATA_WIDTH=512 bash env/build.sh
 运行时再传 `--axi-data-width 512`。程序会校验它与构建值一致。UCIe lane 数、速率、调制
 和模块数量是运行期参数。
 
-仓库提供四个拓扑样例：
+仓库提供以下拓扑样例：
 
 - `configs/topology/single-hbm4.json`：原单模块基线；
 - `configs/topology/dual-ucie-hbm4.json`：两个 16-lane、32 GT/s 模块；
 - `configs/topology/quad-ucie-hbm4.json`：四模块聚合；
-- `configs/topology/dual-ucie-lpddr.json`：较窄的双模块物理链路模板，运行 LPDDR 时同时提供
-  两个节点各自的 `memory.config` 或统一使用 `--ramulator-config`。
+- `configs/topology/octal-ucie-hbm4.json`：八模块聚合；
+- `configs/topology/dual-ucie-lpddr.json`：自动生成 LPDDR5 External 配置的双模块模板；
+- `configs/topology/dual-ucie-lpddr6.json`：自动生成 LPDDR6 External 配置的双模块模板；
+- `configs/topology/single-hbm4-axi512.json` 和 `single-hbm4-axi1024.json`：匹配宽 AXI
+  原始峰值的 32-lane/64-lane、24 GT/s UCIe 模板。
 
 ## 运行示例
 
@@ -79,7 +91,13 @@ bash env/run_topology.sh results/20261008-dual-hbm4-r01 \
 压力参数可用 `SS_TRAFFIC_LOAD_PERCENT`、`SS_TRAFFIC_WARMUP`、
 `SS_TRAFFIC_MEASURE`、`SS_TRAFFIC_COOLDOWN`、`SS_TRAFFIC_SIZE`、
 `SS_TRAFFIC_WORKING_SET`、`SS_TRAFFIC_WRITE_PERCENT` 和
-`SS_TRAFFIC_MAX_INFLIGHT` 覆盖。下面是等价的手动命令：
+`SS_TRAFFIC_MAX_INFLIGHT` 覆盖。链路和后端可用 `SS_RESOURCE_PLANES`、`SS_AXI_PERIOD`、
+`SS_AXI_NO_STALLS`、`SS_RAMULATOR_STANDARD`、`SS_RAMULATOR_CHANNELS`、
+`SS_RAMULATOR_QUEUE`、`SS_RAMULATOR_SLOTS`、`SS_RAMULATOR_CHILDREN`、
+`SS_RAMULATOR_SUBMIT_WIDTH`、`SS_RAMULATOR_RESPONSE_HOLD`、`SS_RAMULATOR_SCALE`、
+`SS_RAMULATOR_NO_POWER` 和 `SS_METRICS_SAMPLE_CYCLES` 覆盖。拓扑文件中的
+`memory.standard` 优先于统一标准，显式 `SS_RAMULATOR_CHANNELS` 则覆盖各节点的
+`memory.channels`。下面是等价的手动命令：
 
 ```bash
 source env/activate.sh
@@ -98,6 +116,26 @@ gem5/build/AXI/gem5.opt --listener-mode=off -d results/manual-dual \
 
 具体路径和配置名称应以本地 Ramulator2 已验证配置为准。拓扑层不会把 HBM 参数改名成
 LPDDR；内存标准、组织、时序和 DRAMPower 模型始终来自实际 External 配置。
+
+仓库提供两套自动回归。模块/RP 矩阵使用当前 AXI256 构建运行 12 个完整用例：
+
+```bash
+bash env/run_configuration_matrix.sh
+# 1/2/4/8 modules × Resource Plane 1/2/4
+```
+
+位宽矩阵会依次重建和运行 256/512/1024 bit，最后恢复默认 256 bit：
+
+```bash
+bash env/run_axi_width_matrix.sh
+# 可用 SS_RESTORE_AXI_DATA_WIDTH=512 指定回归后保留的构建位宽
+```
+
+每个矩阵目录包含 `matrix_plan.json`、`matrix_summary.json`、`matrix_summary.csv` 和
+`matrix_summary.md`。汇总器重新读取每个用例的 `metrics.json`、`metrics_run.json`、
+`topology_resolved.json` 和多模块 `topology_check.json`，检查成功请求、错误数、实际 AXI
+位宽、模块数和 Resource Plane，不会只根据进程退出码判定。位宽宏只附着在依赖 AXI 类型
+的源码单元上，切换位宽仍需要链接新的 gem5，但不再使全部 gem5 源码无条件重编译。
 
 ## 输出与判定
 

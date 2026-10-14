@@ -17,9 +17,26 @@ echo "结果目录：$destination"
     > "$destination/topology-config-test.log" 2>&1
 "$AXI_PYTHON" "$SS_ROOT/env/record.py" "$destination/environment"
 
+ramulator_flags=(
+    --ramulator-standard "${SS_RAMULATOR_STANDARD:-HBM4}"
+    --ramulator-queue "${SS_RAMULATOR_QUEUE:-8}"
+    --ramulator-slots "${SS_RAMULATOR_SLOTS:-8}"
+    --ramulator-children "${SS_RAMULATOR_CHILDREN:-32}"
+    --ramulator-submit-width "${SS_RAMULATOR_SUBMIT_WIDTH:-8}"
+    --ramulator-response-hold "${SS_RAMULATOR_RESPONSE_HOLD:-0}"
+    --ramulator-scale "${SS_RAMULATOR_SCALE:-1}"
+    --metrics-sample-cycles "${SS_METRICS_SAMPLE_CYCLES:-1000}"
+)
+[[ -n ${SS_RAMULATOR_CHANNELS:-} ]] && ramulator_flags+=(--ramulator-channels "$SS_RAMULATOR_CHANNELS")
+[[ -n ${SS_RAMULATOR_CONFIG:-} ]] && ramulator_flags+=(--ramulator-config "$SS_RAMULATOR_CONFIG")
+[[ ${SS_RAMULATOR_NO_POWER:-0} == 1 ]] && ramulator_flags+=(--ramulator-no-power)
+link_flags=(--planes "${SS_RESOURCE_PLANES:-1}" --period "${SS_AXI_PERIOD:-666667fs}")
+[[ ${SS_AXI_NO_STALLS:-0} == 1 ]] && link_flags+=(--no-stalls)
+
 "$AXI_GEM5_BIN" --listener-mode=off -d "$destination" "$AXI_PROJECT_DIR/configs/run.py" \
     --backend aou --memory-backend ramulator2 --mode traffic \
     --topology-config "$topology" --axi-data-width "${SS_AXI_DATA_WIDTH:-256}" \
+    "${link_flags[@]}" "${ramulator_flags[@]}" \
     --traffic-load-percent "${SS_TRAFFIC_LOAD_PERCENT:-100}" \
     --traffic-warmup "${SS_TRAFFIC_WARMUP:-128}" \
     --traffic-measure "${SS_TRAFFIC_MEASURE:-1024}" \
@@ -34,4 +51,4 @@ publish_flags=()
 [[ ${SS_VISUALIZATION_OPEN:-1} == 0 ]] && publish_flags+=(--no-open)
 [[ ${SS_VISUALIZATION_SERVE:-1} == 0 ]] && publish_flags+=(--no-serve)
 "$AXI_PYTHON" "$SS_ROOT/env/publish_results.py" "$destination" "${publish_flags[@]}"
-echo "多模块拓扑仿真与独立验收通过：$destination"
+echo "拓扑仿真与独立验收通过：$destination"

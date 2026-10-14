@@ -20,6 +20,9 @@ gem5、CoralNPU 的本地快照已展开为主仓库源码，导入来源与版�
 [内置源码说明](source-layout.md)及env/vendored_sources.json。必要基础适配直接维护源码，
 构建不重复打补丁。mem_sim已由此前提交移除，历史内存导入记录继续保留供追溯。当前默认在线后端为 Ramulator2，接入契约见[在线后端说明](ramulator-integration.md)。
 并行 AXI/UCIe/memory-node 的配置契约与回归边界见[第二阶段拓扑扩展](topology-extension.md)。
+修改 AXI 数据类型时必须运行 `env/run_axi_width_matrix.sh`；位宽宏只附着在直接依赖 AXI
+类型的 gem5_axi 源文件上，避免切换 256/512/1024 bit 时重编整个 gem5。修改模块路由、
+Resource Plane 或 memory node 实例化时必须运行 `env/run_configuration_matrix.sh`。
 
 ## 迁移历史
 

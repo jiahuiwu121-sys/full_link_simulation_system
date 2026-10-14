@@ -1,0 +1,37 @@
+{
+  "schema": "storagestacked.topology.v1",
+  "module_count": 2,
+  "axi": {
+    "data_width_bits": 256
+  },
+  "routing": {
+    "stripe_bytes": 256,
+    "policy": "address_interleave"
+  },
+  "modules": [
+    {
+      "name": "ucie0-lpddr6",
+      "ucie": {
+        "lanes": 8,
+        "rate_gtps": 16.0,
+        "modulation": "NRZ"
+      },
+      "memory": {
+        "standard": "LPDDR6",
+        "channels": 2
+      }
+    },
+    {
+      "name": "ucie1-lpddr6",
+      "ucie": {
+        "lanes": 8,
+        "rate_gtps": 16.0,
+        "modulation": "NRZ"
+      },
+      "memory": {
+        "standard": "LPDDR6",
+        "channels": 2
+      }
+    }
+  ]
+}

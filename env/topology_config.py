@@ -89,6 +89,20 @@ def load(args):
         raise ValueError('UCIe lane counts and rates must be positive')
     if any(x not in ('NRZ', 'PAM4') for x in mods):
         raise ValueError('UCIe modulation must be NRZ or PAM4')
+    memories = []
+    for item in modules_raw:
+        memory = dict(item.get('memory', {}))
+        if 'standard' in memory:
+            memory['standard'] = str(memory['standard']).upper()
+            if memory['standard'] not in ('HBM4', 'LPDDR5', 'LPDDR6'):
+                raise ValueError('memory standard must be HBM4, LPDDR5 or LPDDR6')
+        if 'channels' in memory:
+            channels = memory['channels']
+            if not isinstance(channels, int) or channels < 1 or channels & (channels - 1):
+                raise ValueError('memory channels must be a positive power of two')
+        if memory.get('config'):
+            memory['config'] = str((source_dir / memory['config']).resolve())
+        memories.append(memory)
     bits = [1 if x == 'NRZ' else 2 for x in mods]
     compiled_width = int(os.environ.get('SS_AXI_DATA_WIDTH', '256'))
     configured_width = raw.get('axi', {}).get('data_width_bits', args.axi_data_width)
@@ -110,10 +124,7 @@ def load(args):
                       'modulation': mods[i],
                       'raw_bandwidth_GBps': lanes[i] * rates[i] * bits[i] / 8.0},
              'memory_node': i,
-             'memory': {
-                 **(modules_raw[i].get('memory', {}) if i < len(modules_raw) else {}),
-                 **({'config': str((source_dir / modules_raw[i]['memory']['config']).resolve())}
-                    if i < len(modules_raw) and modules_raw[i].get('memory',{}).get('config') else {})}}
+             'memory': memories[i] if i < len(memories) else {}}
             for i in range(count)
         ],
     }

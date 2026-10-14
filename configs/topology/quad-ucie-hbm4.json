@@ -10,35 +10,51 @@
   },
   "modules": [
     {
-      "name": "ucie0",
+      "name": "ucie0-hbm4",
       "ucie": {
         "lanes": 16,
         "rate_gtps": 32.0,
         "modulation": "NRZ"
+      },
+      "memory": {
+        "standard": "HBM4",
+        "channels": 2
       }
     },
     {
-      "name": "ucie1",
+      "name": "ucie1-hbm4",
       "ucie": {
         "lanes": 16,
         "rate_gtps": 32.0,
         "modulation": "NRZ"
+      },
+      "memory": {
+        "standard": "HBM4",
+        "channels": 2
       }
     },
     {
-      "name": "ucie2",
+      "name": "ucie2-hbm4",
       "ucie": {
         "lanes": 16,
         "rate_gtps": 32.0,
         "modulation": "NRZ"
+      },
+      "memory": {
+        "standard": "HBM4",
+        "channels": 2
       }
     },
     {
-      "name": "ucie3",
+      "name": "ucie3-hbm4",
       "ucie": {
         "lanes": 16,
         "rate_gtps": 32.0,
         "modulation": "NRZ"
+      },
+      "memory": {
+        "standard": "HBM4",
+        "channels": 2
       }
     }
   ]

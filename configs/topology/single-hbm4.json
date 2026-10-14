@@ -15,6 +15,10 @@
         "lanes": 16,
         "rate_gtps": 24.0,
         "modulation": "NRZ"
+      },
+      "memory": {
+        "standard": "HBM4",
+        "channels": 2
       }
     }
   ]

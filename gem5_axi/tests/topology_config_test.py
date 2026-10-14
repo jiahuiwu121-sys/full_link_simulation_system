@@ -35,14 +35,33 @@ class Range:
         self.options = kwargs
 
 
+original_width = os.environ.get('SS_AXI_DATA_WIDTH')
+os.environ['SS_AXI_DATA_WIDTH'] = '256'
 for name, count in [('single-hbm4.json', 1), ('dual-ucie-hbm4.json', 2),
-                    ('quad-ucie-hbm4.json', 4), ('dual-ucie-lpddr.json', 2)]:
+                    ('quad-ucie-hbm4.json', 4), ('octal-ucie-hbm4.json', 8),
+                    ('dual-ucie-lpddr.json', 2), ('dual-ucie-lpddr6.json', 2)]:
     topology = load(arguments(topology_config=str(ROOT/'configs/topology'/name)))
     assert len(topology['modules']) == count
     assert topology['routing']['policy'] == ('single' if count == 1 else 'address_interleave')
     params = simobject_params(topology)
     assert params['topology_modules'] == count
     assert len(params['ucie_lanes']) == count == len(params['ucie_rates'])
+
+lpddr5 = load(arguments(topology_config=str(ROOT/'configs/topology/dual-ucie-lpddr.json')))
+lpddr6 = load(arguments(topology_config=str(ROOT/'configs/topology/dual-ucie-lpddr6.json')))
+assert {m['memory']['standard'] for m in lpddr5['modules']} == {'LPDDR5'}
+assert {m['memory']['standard'] for m in lpddr6['modules']} == {'LPDDR6'}
+
+try:
+    for width in (512, 1024):
+        os.environ['SS_AXI_DATA_WIDTH'] = str(width)
+        wide = load(arguments(
+            topology_config=str(ROOT/f'configs/topology/single-hbm4-axi{width}.json'),
+            axi_data_width=width))
+        assert wide['axi']['data_width_bits'] == width
+        assert wide['modules'][0]['ucie']['raw_bandwidth_GBps'] == width / 8 * 1.5
+finally:
+    os.environ['SS_AXI_DATA_WIDTH'] = '256'
 
 dual = load(arguments(topology_config=str(ROOT/'configs/topology/dual-ucie-hbm4.json')))
 ranges = interleaved_ranges(Range, [Range(0x90000000, size=0x10000)], dual)
@@ -66,5 +85,13 @@ with tempfile.TemporaryDirectory() as directory:
     path.write_text(json.dumps({'schema':'storagestacked.topology.v1','module_count':2,
                                 'routing':{'policy':'single'},'modules':[{},{}]}))
     rejected(topology_config=str(path))
+    for memory in ({'standard':'DDR5'}, {'standard':'LPDDR5','channels':3}):
+        path.write_text(json.dumps({'schema':'storagestacked.topology.v1','module_count':1,
+                                    'modules':[{'memory':memory}]}))
+        rejected(topology_config=str(path))
 
+if original_width is None:
+    os.environ.pop('SS_AXI_DATA_WIDTH', None)
+else:
+    os.environ['SS_AXI_DATA_WIDTH'] = original_width
 print('stage-2 topology config: PASS')
