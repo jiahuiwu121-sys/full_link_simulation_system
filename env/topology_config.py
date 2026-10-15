@@ -7,6 +7,8 @@ import math
 import os
 from pathlib import Path
 
+from generate_ramulator_config import SUPPORTED_STANDARDS
+
 
 def add_options(parser):
     parser.add_argument('--topology-config', default='',
@@ -94,8 +96,9 @@ def load(args):
         memory = dict(item.get('memory', {}))
         if 'standard' in memory:
             memory['standard'] = str(memory['standard']).upper()
-            if memory['standard'] not in ('HBM4', 'LPDDR5', 'LPDDR6'):
-                raise ValueError('memory standard must be HBM4, LPDDR5 or LPDDR6')
+            if memory['standard'] not in SUPPORTED_STANDARDS:
+                raise ValueError('memory standard must be one of ' +
+                                 ', '.join(SUPPORTED_STANDARDS))
         if 'channels' in memory:
             channels = memory['channels']
             if not isinstance(channels, int) or channels < 1 or channels & (channels - 1):

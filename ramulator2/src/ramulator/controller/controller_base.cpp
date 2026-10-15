@@ -37,7 +37,7 @@ int ControllerBase::get_num_levels() const {
 }
 
 float ControllerBase::get_tCK() const {
-  return m_tCK_ps / 1000.0f;  // ps → ns
+  return static_cast<float>(m_tick_fs) / 1.0e6f;  // fs → ns
 }
 
 bool ControllerBase::get_power_stats(PowerStats& stats) {
@@ -82,6 +82,11 @@ void ControllerBase::init_base() {
   // Cache frequently-used lookups
   m_bank_level = m_device.m_spec->get_level_id("Bank");
   m_tCK_ps = m_device.m_spec->get_timing_value("tCK_ps");
+  m_tick_fs = m_config["dram"]["tick_fs"].as<uint64_t>(
+      static_cast<uint64_t>(m_tCK_ps) * 1000);
+  if (m_tick_fs == 0) {
+    throw std::runtime_error("DRAM tick_fs must be positive");
+  }
 
   // Active buffer holds requests with in-flight opening commands (ACT).
   // One request per bank at most, so size to total bank count.
@@ -478,9 +483,9 @@ void ControllerBase::update_stats() {
   s_priority_queue_len_avg = (m_measured_clk > 0) ? (float)s_priority_queue_len / (float)m_measured_clk : 0;
 
   int tx_bytes = m_device.m_spec->get_tx_bytes();
-  float time_ps = static_cast<float>(m_measured_clk) * m_tCK_ps;
-  s_read_throughput_MBps = (time_ps > 0) ? s_num_read_reqs_served * tx_bytes * 1e6f / time_ps : 0;
-  s_write_throughput_MBps = (time_ps > 0) ? s_num_write_reqs_served * tx_bytes * 1e6f / time_ps : 0;
+  double time_ps = static_cast<double>(m_measured_clk) * m_tick_fs / 1000.0;
+  s_read_throughput_MBps = (time_ps > 0) ? s_num_read_reqs_served * tx_bytes * 1e6 / time_ps : 0;
+  s_write_throughput_MBps = (time_ps > 0) ? s_num_write_reqs_served * tx_bytes * 1e6 / time_ps : 0;
   s_total_throughput_MBps = s_read_throughput_MBps + s_write_throughput_MBps;
 }
 

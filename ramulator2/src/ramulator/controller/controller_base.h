@@ -2,6 +2,7 @@
 #define RAMULATOR_CONTROLLER_CONTROLLER_BASE_H
 
 #include <array>
+#include <cstdint>
 #include <deque>
 #include <string>
 #include <unordered_set>
@@ -44,7 +45,8 @@ class ControllerBase : public IController, public Implementation {
   // Embedding observer runs only after an actual issue; it cannot select commands.
   std::function<void(const Request&, const ControllerBase&)> issue_observer;
   bool has_pending_demand() const;
-  int get_period_ps() const { return m_tCK_ps; }
+  double get_period_ps() const { return static_cast<double>(m_tick_fs) / 1000.0; }
+  uint64_t get_period_fs() const { return m_tick_fs; }
 
   // Passive integration metrics. Queue integrals use the same pre-service
   // sample as native queue_len; active and pending are reported separately.
@@ -101,6 +103,7 @@ class ControllerBase : public IController, public Implementation {
   // Cached spec lookups
   int m_bank_level = -1;
   int m_tCK_ps = -1;
+  uint64_t m_tick_fs = 0;
 
   // Per flat-bank count of requests in m_active_buffer (typically 0 or 1).
   // Maintained by promote_to_active / retire_request.

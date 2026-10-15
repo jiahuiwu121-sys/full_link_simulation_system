@@ -48,7 +48,7 @@ class DRAMPowerModel final : public IControllerPlugin, public IPowerReporter, pu
         m_read_toggle_rate, m_write_toggle_rate, m_read_duty_cycle, m_write_duty_cycle, idle, idle}};
     m_model = DRAMPower::createMemoryModel(m_memspec_path, sim_config);
     m_standard = m_ctrl->m_device.m_spec->standard_name;
-    m_tick_seconds = static_cast<double>(m_ctrl->m_device.m_spec->get_timing_value("tCK_ps")) * 1e-12;
+    m_tick_seconds = static_cast<double>(m_ctrl->get_period_fs()) * 1e-15;
 
     validate_model();
     cache_level_ids();

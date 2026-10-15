@@ -177,7 +177,7 @@ extern "C" ssr_memory* ssr_create(const char* path, uint32_t limit,
             auto* c = dynamic_cast<ControllerBase*>(base);
             require(c, "controller has no embedding capability");
             const auto& spec = *c->m_device.m_spec;
-            require(spec.read_latency > 0 && spec.write_latency > 0 && c->get_period_ps() > 0,
+            require(spec.read_latency > 0 && spec.write_latency > 0 && c->get_period_fs() > 0,
                     "invalid model latency or clock");
             uint64_t capacity = spec.get_tx_bytes();
             for (int i = 1; i < spec.level_count; ++i) {
@@ -186,7 +186,7 @@ extern "C" ssr_memory* ssr_create(const char* path, uint32_t limit,
                 require(count && capacity <= UINT64_MAX / count, "invalid organization capacity");
                 capacity *= count;
             }
-            const uint64_t period = uint64_t(c->get_period_ps()) * 1000 * scale;
+            const uint64_t period = c->get_period_fs() * scale;
             if (h->controllers.empty()) {
                 h->info.period_fs = period; channel_capacity = capacity;
                 h->info.read_latency = spec.read_latency; h->info.write_latency = spec.write_latency;

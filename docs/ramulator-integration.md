@@ -81,6 +81,7 @@ XPU 配置默认选择 ramulator2。两种配置共用参数：
 | 参数 | 默认/含义 |
 |---|---|
 | `--ramulator-config` | 可选完整展开的 External 配置；未提供时生成 HBM4 |
+| `--ramulator-standard` | 自动生成档案：HBM3、HBM3E、HBM4、LPDDR5 或 LPDDR6；默认 HBM4 |
 | `--ramulator-channels` | CPU/NPU 默认 2，启用 GPU 默认 8；必须是 2 的幂 |
 | `--ramulator-queue` | 每 controller read/write queue 各 8，生成配置时使用 |
 | `--ramulator-slots` | 8 个已接收 AXI parent burst |
@@ -91,6 +92,15 @@ XPU 配置默认选择 ramulator2。两种配置共用参数：
 | `--ramulator-no-power` | 不创建功耗 plugin，验证观察透明性 |
 
 默认 HBM4_32Gb_8Hi / HBM4_8000Mbps 配置使用 32B transaction、250ps 内部 tick、FRFCFSRowHit、Open row policy、HBM34PerBankRefresh、RoBaRaCoCh 和 CacheLineInterleave。单 controller 可映射 1GiB；运行时验证组织容量覆盖完整目标窗口。`run.py` 的定向/独立 CPU 后端窗口为 8KiB，bridge 的 16KiB 路由范围包含越界测试地址；`run_xpu.py` 未启用 GPU 时后端窗口为 768MiB，启用 GPU 时连同地址孔洞为 5.75GiB。
+
+HBM3 自动档案为 `HBM3_16Gb_8hi / HBM3_6400Mbps`；HBM3E 自动档案为
+`HBM3E_24Gb_8Hi / HBM3E_8000Mbps`。二者都使用 HBM34 controller、每 bank 刷新、
+FRFCFSRowHit、Open row policy、RoBaRaCoCh 和 32B transaction。HBM3E 在 Ramulator2 中复用
+HBM3 命令/状态类，生成元数据会同时保存用户选择的 `standard: HBM3E` 和实际
+`dram_implementation: HBM3`，不会把两者混写。HBM3E 的完整时序表和功耗电气参数属于公开
+数据基础上的估计，结果适合相对比较，绝对值仍需目标器件实测参数标定。
+行为模型使用生成配置中的 `tick_fs` 作为物理时间源，因此 HBM3 的 625ps CK 经半周期建模后
+会精确保留为 312500fs，不会被旧的整数 ps 字段截断；DRAMPower 与 gem5 也使用这一时间基准。
 
 默认 AXI256 周期为 666667fs，即每个独立 W/R 数据方向约 47.999976GB/s；默认 UCIe 16lane×24GT/s NRZ 经量化后的裸容量约 47.999616GB/s。两者相差远小于20%，避免旧 2ns AXI（16GB/s）在配置上先成为瓶颈。后端默认提交上限为 `8×32B/250ps=1024GB/s`，它是调度器尝试槽位上限，不是DRAM实际可持续带宽；HBM4数据总线容量仍由实际controller、pseudochannel、nBL和周期推导。页面的“模型容量平衡”同时显示这些上限及结构瓶颈。
 
@@ -105,6 +115,8 @@ XPU 配置默认选择 ramulator2。两种配置共用参数：
 ```bash
 source env/activate.sh
 "$AXI_PYTHON" env/generate_ramulator_config.py build/custom-hbm4 --channels 8 --queue 8
+"$AXI_PYTHON" env/generate_ramulator_config.py build/custom-hbm3 --standard HBM3 --channels 8 --queue 8
+"$AXI_PYTHON" env/generate_ramulator_config.py build/custom-hbm3e --standard HBM3E --channels 8 --queue 8
 ```
 
 生成的是原生 YAML parser 可读的 JSON 配置，避免路径引号歧义。同目录保存 memspec 和配置哈希。scale 保留 CK 计数并修改周期/速率，配套重新生成 memspec；这是可重复的时钟敏感性实验，并非经独立校准的新 JEDEC preset。

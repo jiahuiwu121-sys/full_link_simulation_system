@@ -27,10 +27,12 @@ bash env/run_topology.sh results/20261008-dual-hbm4-r01 \
 
 配置文件、环境变量和输出说明见[第二阶段拓扑扩展](../docs/topology-extension.md)。
 
-LPDDR5/LPDDR6 External 后端和两类配置矩阵：
+HBM3/HBM3E/LPDDR5/LPDDR6 External 后端和两类配置矩阵：
 
 ```bash
 # 拓扑中的 memory.standard 会选择实际 Ramulator2/DRAMPower 模型
+bash env/run_topology.sh results/hbm3-check configs/topology/single-hbm3.json
+bash env/run_topology.sh results/hbm3e-check configs/topology/single-hbm3e.json
 bash env/run_topology.sh results/lpddr5-check configs/topology/dual-ucie-lpddr.json
 bash env/run_topology.sh results/lpddr6-check configs/topology/dual-ucie-lpddr6.json
 

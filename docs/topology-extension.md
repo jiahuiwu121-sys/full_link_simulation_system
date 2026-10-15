@@ -43,18 +43,24 @@ AXI beat，并且不能小于工作负载可能产生的单个目标请求，否
 - `ucie.lanes`：该物理模块的 lane 数；
 - `ucie.rate_gtps`：每 lane 传输率；
 - `ucie.modulation`：`NRZ` 或 `PAM4`；
-- `memory.standard`：自动生成 External 配置的内存标准，可选 `HBM4`、`LPDDR5`、`LPDDR6`；
+- `memory.standard`：自动生成 External 配置的内存档案，可选 `HBM3`、`HBM3E`、`HBM4`、
+  `LPDDR5`、`LPDDR6`；
 - `memory.channels`：该节点自动生成配置中的 controller/subchannel 数，必须为正二次幂；
 - `memory.config`：相对于拓扑文件的完整 Ramulator External 配置。可用它接入
   自定义时序；一旦任一节点指定，所有节点都必须指定，避免静默混用。
 
 未提供 `memory.config` 时，`env/generate_ramulator_config.py` 会为每个 memory node 生成真正的
-Ramulator2 `External` 配置、匹配的 DRAMPower memspec 和带哈希的配置元数据。LPDDR5 使用
+Ramulator2 `External` 配置、匹配的 DRAMPower memspec 和带哈希的配置元数据。HBM3 使用
+`HBM3_16Gb_8hi / HBM3_6400Mbps`；HBM3E 使用
+`HBM3E_24Gb_8Hi / HBM3E_8000Mbps`，并通过 Ramulator2 的 HBM3 命令/状态实现建模。
+HBM3E 档案不是另一个原生 DRAM 类，实际实现名会以 `dram_implementation: HBM3` 写入配置
+元数据。其 8Gbps 时序保持 HBM3 6.4Gbps 档案的物理时间，功耗参数从公开 HBM3E 参数按
+速率缩放，均未经过具体器件标定。LPDDR5 使用
 `LPDDR5_16Gb_x16 / LPDDR5_6400`，LPDDR6 使用
 `LPDDR6_16Gb_x12 / LPDDR6_10667_BL24`；LPDDR6 的两个 controller 对应一个物理 x24
 通道的两个 x12 subchannel。LPDDR 功耗使用仓库公开参考参数，绝对精度未作目标厂商标定，
-这一限制会写入结果元数据。LPDDR 不允许使用 HBM4 专用的 `--ramulator-scale`，避免伪造
-未验证的时序预设。
+这一限制会写入结果元数据。HBM3、HBM3E 和 LPDDR 不允许使用 HBM4 专用的
+`--ramulator-scale`，避免伪造未验证的时序预设。
 
 AXI 数据宽度可选 256、512、1024 bit，但 SystemC 端口类型在 C++ 编译时固定，所以必须先：
 
@@ -68,6 +74,8 @@ SS_AXI_DATA_WIDTH=512 bash env/build.sh
 仓库提供以下拓扑样例：
 
 - `configs/topology/single-hbm4.json`：原单模块基线；
+- `configs/topology/single-hbm3.json`：HBM3 6.4Gbps 单模块模板；
+- `configs/topology/single-hbm3e.json`：HBM3E 8.0Gbps 单模块模板；
 - `configs/topology/dual-ucie-hbm4.json`：两个 16-lane、32 GT/s 模块；
 - `configs/topology/quad-ucie-hbm4.json`：四模块聚合；
 - `configs/topology/octal-ucie-hbm4.json`：八模块聚合；
@@ -82,6 +90,10 @@ SS_AXI_DATA_WIDTH=512 bash env/build.sh
 
 ```bash
 SS_EXPERIMENT_LABEL=dual-hbm4 bash env/run_topology.sh
+
+# HBM3/HBM3E 使用相同链路参数，便于和 HBM4 对照内存模型差异
+bash env/run_topology.sh results/hbm3-check configs/topology/single-hbm3.json
+bash env/run_topology.sh results/hbm3e-check configs/topology/single-hbm3e.json
 
 # 显式结果目录和配置
 bash env/run_topology.sh results/20261008-dual-hbm4-r01 \

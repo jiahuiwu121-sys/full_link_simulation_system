@@ -187,6 +187,13 @@ class DRAMStandard(Component):
         # half-CK ticks), scale timing_dict here so every downstream consumer
         # (expressions, serialization, read_latency) works in ticks unchanged.
         tick_mult = cls.tick_multiplier
+        tick_fs_numerator = timing_dict["tCK_ps"] * 1000
+        if tick_fs_numerator % tick_mult:
+            raise ValueError(
+                f"{cls.name}: tCK_ps={timing_dict['tCK_ps']} cannot be represented "
+                f"as an integer-femtosecond tick with multiplier {tick_mult}"
+            )
+        tick_fs = int(tick_fs_numerator // tick_mult)
         if tick_mult != 1:
             for k in list(timing_dict):
                 if k == "rate":
@@ -252,6 +259,10 @@ class DRAMStandard(Component):
 
         config = {
             "impl": cls.name,
+            # tCK_ps remains in the legacy integer timing vector.  tick_fs is
+            # the authoritative physical period and preserves sub-ps ticks
+            # such as HBM3 625ps / 2 = 312.5ps.
+            "tick_fs": tick_fs,
             "org": {
                 "dq": org_dict["dq"],
                 # Channel count is always 1 — multi-channel is system-level

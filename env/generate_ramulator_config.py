@@ -9,7 +9,31 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'ramulator2/python'))
 
-SUPPORTED_STANDARDS = ('HBM4', 'LPDDR5', 'LPDDR6')
+SUPPORTED_STANDARDS = ('HBM3', 'HBM3E', 'HBM4', 'LPDDR5', 'LPDDR6')
+
+HBM_PROFILES = {
+    'HBM3': {
+        'dram_implementation': 'HBM3',
+        'organization_preset': 'HBM3_16Gb_8hi',
+        'timing_preset': 'HBM3_6400Mbps',
+        'experiment': (
+            'HBM3 16Gb 8-Hi at 6.4Gbps/pin; power uses estimated public '
+            'HBM3E electrical parameters'
+        ),
+    },
+    'HBM3E': {
+        # Ramulator2 intentionally models HBM3E through the HBM3 command/state
+        # implementation with a distinct organization and timing preset.
+        'dram_implementation': 'HBM3',
+        'organization_preset': 'HBM3E_24Gb_8Hi',
+        'timing_preset': 'HBM3E_8000Mbps',
+        'experiment': (
+            'HBM3E 24Gb 8-Hi at 8.0Gbps/pin; timing preserves the physical '
+            'delays of the HBM3 preset and power is rate-scaled from public '
+            'HBM3E electrical parameters'
+        ),
+    },
+}
 
 
 def normalize_standard(value):
@@ -36,7 +60,28 @@ def generate_config(directory, channels=2, queue=8, clock_scale=1, power=True,
     directory = Path(directory).resolve()
     directory.mkdir(parents=True, exist_ok=True)
 
-    if standard == 'HBM4':
+    if standard in HBM_PROFILES:
+        profile = HBM_PROFILES[standard]
+        org_preset = profile['organization_preset']
+        timing_preset = profile['timing_preset']
+        dram_class = getattr(dram, profile['dram_implementation'])
+
+        def make_dram():
+            return dram_class(org_preset=org_preset, timing_preset=timing_preset)
+
+        model = HBM34PowerModel(make_dram(), directory / f'{standard.lower()}_memspec.json')
+
+        def make_controller():
+            return controller.HBM34(
+                dram=make_dram(), read_buffer_size=queue, write_buffer_size=queue,
+                scheduler=scheduler.FRFCFSRowHit(),
+                refresh_manager=refresh_manager.HBM34PerBankRefresh(),
+                row_policy=row_policy.Open(), addr_mapper=addr_mapper.RoBaRaCoCh(),
+                controller_plugins=[model.plugin()] if power else [],
+            )
+
+        experiment = profile['experiment']
+    elif standard == 'HBM4':
         org_preset = 'HBM4_32Gb_8Hi'
         timing_preset = 'HBM4_8000Mbps'
 
@@ -126,10 +171,15 @@ def generate_config(directory, channels=2, queue=8, clock_scale=1, power=True,
     # JSON is valid YAML and safely quotes absolute paths consumed by native Ramulator2.
     path = directory / f'{standard.lower()}_external.yaml'
     path.write_text(json.dumps(config, indent=2) + '\n')
+    resolved_dram = make_dram()
+    _, resolved_timing = resolved_dram.resolve()
     metadata = {
         'standard': standard,
+        'dram_implementation': type(resolved_dram).name,
         'organization_preset': org_preset,
         'timing_preset': timing_preset,
+        'data_rate_mbps': resolved_timing['rate'],
+        'tick_fs': resolved_dram.to_config()['tick_fs'],
         'channels': channels,
         'queue': queue,
         'clock_scale': clock_scale,

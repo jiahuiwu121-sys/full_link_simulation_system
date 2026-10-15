@@ -8,7 +8,7 @@ CPU / Vortex GPU / CoralNPU → 原生可配置宽度AXI → AXI2Flit → 可配
 `check_topology.py` 校验地址归属及跨层守恒。配置格式、运行命令、输出证据和当前边界见
 [拓扑扩展说明](docs/topology-extension.md)。
 
-拓扑可用 `memory.standard` 直接生成 HBM4、LPDDR5 或 LPDDR6 的 Ramulator2 External 配置
+拓扑可用 `memory.standard` 直接生成 HBM3、HBM3E、HBM4、LPDDR5 或 LPDDR6 的 Ramulator2 External 配置
 及匹配功耗输入。`env/run_configuration_matrix.sh` 验收 1/2/4/8 模块与 RP1/2/4 的组合，
 `env/run_axi_width_matrix.sh` 重建并验收 AXI256/512/1024 后恢复默认位宽。
 
@@ -22,7 +22,7 @@ CPU / Vortex GPU / CoralNPU → 原生可配置宽度AXI → AXI2Flit → 可配
 | coralnpu | NPU硬件、RTL仿真与在线AXI适配 |
 | protocol/include | 两端共享的AoU帧格式 |
 
-独立内存模拟器位于 [`ramulator2/`](ramulator2/README.md)，包含 HBM3、HBM4、LPDDR5、LPDDR6 及 DRAMPower 功耗模型，其构建和使用说明见该目录 README。全链路默认在线后端为 `ramulator2`；接入契约、配置和验收见[在线后端说明](docs/ramulator-integration.md)。
+独立内存模拟器位于 [`ramulator2/`](ramulator2/README.md)，包含 HBM3/HBM3E、HBM4、LPDDR5、LPDDR6 及 DRAMPower 功耗模型，其构建和使用说明见该目录 README。全链路默认在线后端为 `ramulator2`；接入契约、配置和验收见[在线后端说明](docs/ramulator-integration.md)。
 
 整体架构、核心文件职责、上下游接口及一次访存的完整路径见[当前系统解读](docs/code-reading/09-current-system-walkthrough.md)。[当前全文件清单](docs/code-reading/current-file-map.csv)包含主仓库与已初始化的 Vortex 递归依赖；核心文件人工说明与其余文件的静态目录分类分别标记。
 

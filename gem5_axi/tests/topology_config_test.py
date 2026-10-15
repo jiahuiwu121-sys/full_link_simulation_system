@@ -37,7 +37,8 @@ class Range:
 
 original_width = os.environ.get('SS_AXI_DATA_WIDTH')
 os.environ['SS_AXI_DATA_WIDTH'] = '256'
-for name, count in [('single-hbm4.json', 1), ('dual-ucie-hbm4.json', 2),
+for name, count in [('single-hbm3.json', 1), ('single-hbm3e.json', 1),
+                    ('single-hbm4.json', 1), ('dual-ucie-hbm4.json', 2),
                     ('quad-ucie-hbm4.json', 4), ('octal-ucie-hbm4.json', 8),
                     ('dual-ucie-lpddr.json', 2), ('dual-ucie-lpddr6.json', 2)]:
     topology = load(arguments(topology_config=str(ROOT/'configs/topology'/name)))
@@ -49,6 +50,10 @@ for name, count in [('single-hbm4.json', 1), ('dual-ucie-hbm4.json', 2),
 
 lpddr5 = load(arguments(topology_config=str(ROOT/'configs/topology/dual-ucie-lpddr.json')))
 lpddr6 = load(arguments(topology_config=str(ROOT/'configs/topology/dual-ucie-lpddr6.json')))
+hbm3 = load(arguments(topology_config=str(ROOT/'configs/topology/single-hbm3.json')))
+hbm3e = load(arguments(topology_config=str(ROOT/'configs/topology/single-hbm3e.json')))
+assert {m['memory']['standard'] for m in hbm3['modules']} == {'HBM3'}
+assert {m['memory']['standard'] for m in hbm3e['modules']} == {'HBM3E'}
 assert {m['memory']['standard'] for m in lpddr5['modules']} == {'LPDDR5'}
 assert {m['memory']['standard'] for m in lpddr6['modules']} == {'LPDDR6'}
 
