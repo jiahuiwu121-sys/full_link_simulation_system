@@ -159,7 +159,14 @@ def check(directory, latency=3, directed=False):
             assert a["tick"] > t["accepted_tick"], "AXI before TLM admission"
         assert cursor == t["address"] + t["bytes"]
         assert t["begin_tick"] <= t["accepted_tick"] <= t["axi_done_tick"] <= t["end_resp_tick"]
-        assert max(parent_done[t["id"]]) == t["axi_done_tick"]
+        wire_done = max(parent_done[t["id"]])
+        if summary.get("buffered_axi_aggregator", False):
+            # The shared-link response is first accepted into a per-port FIFO;
+            # the slower logical input clock consumes it later.  Equality only
+            # applies to the historical unbuffered one-to-one path.
+            assert wire_done <= t["axi_done_tick"]
+        else:
+            assert wire_done == t["axi_done_tick"]
         max_latency = max(max_latency, t["end_resp_tick"] - t["begin_tick"])
     coverage = dict(narrow_bursts=narrow, full_width_bursts=full_width, bursts_256_beats=limit256,
                     masked_write_beats=masked, aw_before_w=aw_leads,

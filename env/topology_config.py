@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Load and validate the stage-2 AXI/UCIe/memory topology description."""
+"""Load and validate legacy and graph-based AXI/UCIe/memory topologies.
+
+``storagestacked.topology.v1`` keeps the original one AXI port per UCIe link
+contract.  ``storagestacked.system.v2`` separates AXI ports from physical
+links, allowing several equal-width AXI ports to share one UCIe/AoU/memory
+path.  The returned object is normalized so existing reporting code can keep
+using ``modules`` for physical links while new code uses ``axi_ports``.
+"""
 from __future__ import annotations
 
 import json
@@ -53,8 +60,11 @@ def load(args):
         source_dir = path.parent
     else:
         source_dir = Path.cwd()
-    if raw and raw.get('schema') != 'storagestacked.topology.v1':
-        raise ValueError('topology schema must be storagestacked.topology.v1')
+    schema = raw.get('schema', 'storagestacked.topology.v1') if raw else 'storagestacked.topology.v1'
+    if schema not in ('storagestacked.topology.v1', 'storagestacked.system.v2'):
+        raise ValueError('topology schema must be storagestacked.topology.v1 or storagestacked.system.v2')
+    if schema == 'storagestacked.system.v2':
+        return _load_v2(args, raw, source, source_dir)
     modules_raw = raw.get('modules', [])
     count = args.topology_modules or raw.get('module_count') or len(modules_raw) or 1
     if count < 1 or count > 64 or count & (count - 1):
@@ -131,13 +141,175 @@ def load(args):
             for i in range(count)
         ],
     }
+    resolved['axi_ports'] = [
+        {'id': i, 'name': f'axi{i}', 'link': i, 'sources': []}
+        for i in range(count)
+    ]
+    resolved['memory_nodes'] = [
+        {'id': i, 'name': f'memory{i}', **resolved['modules'][i]['memory']}
+        for i in range(count)
+    ]
+    resolved['mapping'] = {'axi_port_to_link': list(range(count)),
+                           'link_to_memory_node': list(range(count))}
+    resolved['bridge'] = {'fabric_clock_ratio': 1}
+    return resolved
+
+
+def _load_v2(args, raw, source, source_dir):
+    """Normalize the system graph while enforcing currently modeled edges.
+
+    Multiple AXI ports may share a link.  Each physical link currently owns
+    exactly one memory node; the explicit mapping is retained so a later
+    multi-link memory arbiter can extend the graph without another schema
+    change.
+    """
+    axi_raw = raw.get('axi_ports', [])
+    links_raw = raw.get('ucie_links', [])
+    memory_raw = raw.get('memory_nodes', [])
+    if not axi_raw or not links_raw or not memory_raw:
+        raise ValueError('system.v2 requires non-empty axi_ports, ucie_links and memory_nodes')
+    if len(axi_raw) > 64 or len(links_raw) > 64 or len(memory_raw) > 64:
+        raise ValueError('system.v2 supports at most 64 AXI ports, links and memory nodes')
+
+    def unique(items, kind):
+        names = [str(x.get('name', '')) for x in items]
+        if any(not x for x in names) or len(names) != len(set(names)):
+            raise ValueError(f'{kind} names must be non-empty and unique')
+        return {name: i for i, name in enumerate(names)}
+
+    link_ids = unique(links_raw, 'UCIe link')
+    memory_ids = unique(memory_raw, 'memory node')
+    unique(axi_raw, 'AXI port')
+    configured_width = raw.get('axi', {}).get('data_width_bits', args.axi_data_width)
+    if configured_width not in (256, 512, 1024):
+        raise ValueError('system.v2 AXI width must be 256, 512 or 1024')
+    if configured_width != args.axi_data_width:
+        raise ValueError('topology AXI width does not match --axi-data-width')
+    compiled_width = int(os.environ.get('SS_AXI_DATA_WIDTH', '256'))
+    if configured_width != compiled_width:
+        raise ValueError(f'--axi-data-width={configured_width} does not match '
+                         f'compiled SS_AXI_DATA_WIDTH={compiled_width}; rebuild first')
+
+    memories = []
+    for i, item in enumerate(memory_raw):
+        memory = dict(item)
+        memory.pop('name', None)
+        standard = str(memory.get('standard', '')).upper()
+        if standard not in SUPPORTED_STANDARDS:
+            raise ValueError('memory standard must be one of ' + ', '.join(SUPPORTED_STANDARDS))
+        memory['standard'] = standard
+        channels = memory.get('channels', 2)
+        if not isinstance(channels, int) or channels < 1 or channels & (channels - 1):
+            raise ValueError('memory channels must be a positive power of two')
+        memory['channels'] = channels
+        if memory.get('config'):
+            memory['config'] = str((source_dir / memory['config']).resolve())
+        memories.append({'id': i, 'name': memory_raw[i]['name'], **memory})
+
+    modules = []
+    link_to_memory = []
+    for i, item in enumerate(links_raw):
+        lanes = int(item.get('lanes', 16))
+        rate = float(item.get('rate_gtps', 24.0))
+        modulation = str(item.get('modulation', 'NRZ')).upper()
+        if lanes < 1 or rate <= 0 or not math.isfinite(rate):
+            raise ValueError('UCIe lane counts and rates must be positive')
+        if modulation not in ('NRZ', 'PAM4'):
+            raise ValueError('UCIe modulation must be NRZ or PAM4')
+        memory_name = item.get('memory_node')
+        if memory_name not in memory_ids:
+            raise ValueError(f'UCIe link {item["name"]} references unknown memory node')
+        memory_id = memory_ids[memory_name]
+        link_to_memory.append(memory_id)
+        bits = 1 if modulation == 'NRZ' else 2
+        modules.append({
+            'id': i, 'name': item['name'],
+            'ucie': {'lanes': lanes, 'rate_gtps': rate, 'modulation': modulation,
+                     'raw_bandwidth_GBps': lanes * rate * bits / 8.0},
+            'memory_node': memory_id,
+            'memory': {k: v for k, v in memories[memory_id].items()
+                       if k not in ('id', 'name')},
+        })
+    if len(set(link_to_memory)) != len(link_to_memory):
+        raise ValueError('shared memory nodes across multiple UCIe links are not yet enabled; '
+                         'aggregate AXI ports onto one link or use distinct memory nodes')
+    unused_memories = sorted(set(range(len(memories))) - set(link_to_memory))
+    if unused_memories:
+        raise ValueError('every memory node must be connected to one UCIe link')
+
+    ports = []
+    port_to_link = []
+    for i, item in enumerate(axi_raw):
+        link_name = item.get('link')
+        if link_name not in link_ids:
+            raise ValueError(f'AXI port {item["name"]} references unknown UCIe link')
+        link = link_ids[link_name]
+        port_to_link.append(link)
+        sources = item.get('sources', [])
+        if isinstance(sources, str):
+            sources = [sources]
+        if not isinstance(sources, list) or any(not isinstance(x, str) for x in sources):
+            raise ValueError('AXI port sources must be a string list')
+        ports.append({'id': i, 'name': item['name'], 'link': link, 'sources': sources})
+    missing_links = sorted(set(range(len(modules))) - set(port_to_link))
+    if missing_links:
+        raise ValueError('every UCIe link must have at least one AXI port')
+
+    routing = raw.get('routing', {})
+    expected_policy = 'single' if len(ports) == 1 else 'address_interleave'
+    policy = routing.get('policy', expected_policy)
+    if policy != expected_policy:
+        raise ValueError(f'{len(ports)} AXI ports require routing policy {expected_policy}')
+    stripe = args.topology_stripe_bytes or routing.get('stripe_bytes', 4096)
+    if stripe < configured_width // 8 or stripe & (stripe - 1):
+        raise ValueError('topology stripe must be a power of two and cover one AXI beat')
+    if len(ports) > 1 and len(ports) & (len(ports) - 1):
+        raise ValueError('address-interleaved AXI port count must be a power of two')
+    fanin = [port_to_link.count(link) for link in range(len(modules))]
+    fabric_ratio = int(raw.get('bridge', {}).get('fabric_clock_ratio', 1))
+    if fabric_ratio < 1 or fabric_ratio & (fabric_ratio - 1):
+        raise ValueError('bridge.fabric_clock_ratio must be a positive power of two')
+    if any(count != fabric_ratio for count in fanin):
+        raise ValueError('every UCIe link must have exactly fabric_clock_ratio AXI ports; '
+                         'this models a deterministic multi-port gearbox')
+
+    sources = raw.get('sources', [])
+    if not isinstance(sources, list) or any(not isinstance(x, dict) for x in sources):
+        raise ValueError('sources must be an object list')
+    source_list = [str(x.get('name', '')) for x in sources]
+    if any(not x for x in source_list) or len(source_list) != len(set(source_list)):
+        raise ValueError('source names must be non-empty and unique')
+    source_names = set(source_list)
+    referenced_sources = {x for port in ports for x in port['sources']}
+    if not referenced_sources <= source_names:
+        raise ValueError('AXI port references an unknown source')
+    resolved = {
+        'schema': 'storagestacked.system.v2', 'source': source,
+        'name': raw.get('name', Path(source).stem if source != 'command-line defaults' else 'system'),
+        'axi': {'data_width_bits': configured_width,
+                'clock_period': raw.get('axi', {}).get('clock_period', '666667fs')},
+        'routing': {'policy': policy, 'stripe_bytes': stripe},
+        'sources': sources, 'axi_ports': ports, 'modules': modules,
+        'memory_nodes': memories,
+        'bridge': {'fabric_clock_ratio': fabric_ratio},
+        'mapping': {'axi_port_to_link': port_to_link,
+                    'link_to_memory_node': link_to_memory},
+        'requirements': raw.get('requirements', {}),
+    }
     return resolved
 
 
 def simobject_params(topology):
     modules = topology['modules']
+    ports = topology.get('axi_ports') or [
+        {'id': i, 'link': i} for i in range(len(modules))]
     return dict(
         topology_modules=len(modules),
+        topology_ports=len(ports),
+        axi_port_to_link=[p['link'] for p in ports],
+        axi_port_dividers=[topology.get('bridge', {}).get('fabric_clock_ratio', 1)] * len(ports),
+        axi_port_phases=[sum(1 for prior in ports[:i] if prior['link'] == port['link'])
+                         for i, port in enumerate(ports)],
         topology_policy=topology['routing']['policy'],
         topology_stripe_bytes=topology['routing']['stripe_bytes'],
         ucie_lanes=[m['ucie']['lanes'] for m in modules],
@@ -155,8 +327,8 @@ def write_resolved(topology, directory):
 
 
 def interleaved_ranges(AddrRange, ranges, topology):
-    """Return one list of non-overlapping gem5 ranges for every module."""
-    count = len(topology['modules'])
+    """Return one list of non-overlapping gem5 ranges for every AXI port."""
+    count = len(topology.get('axi_ports') or topology['modules'])
     if count == 1:
         return [list(ranges)]
     bits = int(math.log2(count))

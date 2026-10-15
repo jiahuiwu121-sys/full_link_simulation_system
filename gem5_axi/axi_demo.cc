@@ -1,5 +1,6 @@
 #include "axi_demo.hh"
 #include "aou_backend.hh"
+#include "axi_mux.hh"
 #include "systemc/tlm_bridge/gem5_to_tlm.hh"
 #include "systemc/utils/tracefile.hh"
 #include "sim/core.hh"
@@ -8,6 +9,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <stdexcept>
 
 namespace storage_axi {
@@ -44,9 +46,26 @@ Demo::Demo(const gem5::AxiDemoParams& p)
 Demo::Demo(sc_module_name n, const gem5::AxiDemoParams& p)
     : sc_module(n), clock("aclk", sc_time::from_value(p.period)),
       directory(p.trace_dir), topologyPolicy(p.topology_policy) {
-    const unsigned count = p.topology_modules;
-    if (!count || count > 64) throw std::invalid_argument("topology_modules must be in [1,64]");
-    if (p.backend == "ram" && count != 1)
+    const unsigned linkCount = p.topology_modules;
+    const unsigned portCount = p.topology_ports;
+    if (!linkCount || linkCount > 64) throw std::invalid_argument("topology_modules must be in [1,64]");
+    if (!portCount || portCount > 64) throw std::invalid_argument("topology_ports must be in [1,64]");
+    if (p.axi_port_to_link.size() != portCount)
+        throw std::invalid_argument("axi_port_to_link must contain one entry per AXI port");
+    if (p.axi_port_dividers.size() != portCount || p.axi_port_phases.size() != portCount)
+        throw std::invalid_argument("AXI clock divider/phase vectors must match AXI ports");
+    portToLink.assign(p.axi_port_to_link.begin(), p.axi_port_to_link.end());
+    linkPorts.resize(linkCount);
+    for (unsigned port = 0; port < portCount; ++port) {
+        if (portToLink[port] >= linkCount) throw std::invalid_argument("AXI port maps to invalid link");
+        linkPorts[portToLink[port]].push_back(port);
+    }
+    if (std::any_of(linkPorts.begin(), linkPorts.end(), [](const auto& ports) { return ports.empty(); }))
+        throw std::invalid_argument("every physical link requires at least one AXI port");
+    groupedTopology = portCount != linkCount;
+    for (unsigned i = 0; i < portCount && !groupedTopology; ++i)
+        groupedTopology = portToLink[i] != i;
+    if (p.backend == "ram" && linkCount != 1)
         throw std::invalid_argument("parallel topology requires backend=aou");
     if (p.memory_backend != "memsim" && p.memory_backend != "ramulator2" &&
         p.size > UINT32_MAX)
@@ -60,62 +79,103 @@ Demo::Demo(sc_module_name n, const gem5::AxiDemoParams& p)
         topology << p.topology_resolved << '\n';
     }
 
-    wires.reserve(count); masters.reserve(count); rams.reserve(count);
-    aous.reserve(count); wrappers.reserve(count); vcds.reserve(count);
-    events.reserve(count); linkDirectories.reserve(count); metrics.resize(count);
-    for (unsigned i = 0; i < count; ++i) {
+    portWires.reserve(portCount); masters.reserve(portCount); wrappers.reserve(portCount);
+    portDirectories.reserve(portCount); portVcds.reserve(portCount);
+    linkWiresOwned.reserve(linkCount); linkWires.reserve(linkCount); rams.reserve(linkCount);
+    aous.reserve(linkCount); muxes.reserve(linkCount); vcds.reserve(linkCount);
+    events.reserve(linkCount); linkDirectories.reserve(linkCount); metrics.resize(linkCount);
+
+    // Construct the independent TLM/AXI request ports first.  Grouped profiles
+    // keep their raw request lifetime evidence under ports/portN; legacy
+    // one-to-one profiles retain the historical link directory layout.
+    for (unsigned i = 0; i < portCount; ++i) {
         const std::string suffix = std::to_string(i);
-        const std::string linkDir = count == 1 ? directory :
+        const std::string portDir = groupedTopology ? directory + "/ports/port" + suffix :
+            (linkCount == 1 ? directory : directory + "/links/link" + suffix);
+        fs::create_directories(portDir); portDirectories.push_back(portDir);
+        portWires.push_back(std::make_unique<Signals>("port" + suffix));
+        masters.push_back(std::make_unique<Master>(("master" + suffix).c_str(),
+            p.outstanding, p.stalls, portDir, i,
+            p.axi_port_dividers[i], p.axi_port_phases[i]));
+        masters.back()->requestorName = [system = p.system](uint32_t id) {
+            return system->getRequestorName(id);
+        };
+        masters.back()->clk(clock); masters.back()->resetn(resetn);
+        masters.back()->axi.bind(*portWires.back());
+        wrappers.push_back(std::make_unique<sc_gem5::TlmTargetWrapper<64>>(
+            masters.back()->socket, std::string(name()) + ".tlm[" + suffix + "]", i));
+        if (groupedTopology) {
+            auto* vcd = sc_create_vcd_trace_file((portDir + "/axi_wave").c_str());
+            vcd->set_time_unit(1, SC_FS); sc_trace(vcd, clock, "ACLK");
+            sc_trace(vcd, resetn, "ARESETn"); portWires.back()->trace(vcd);
+            portVcds.push_back(vcd);
+        } else portVcds.push_back(nullptr);
+    }
+
+    for (unsigned i = 0; i < linkCount; ++i) {
+        const std::string suffix = std::to_string(i);
+        const std::string linkDir = linkCount == 1 ? directory :
             directory + "/links/link" + suffix;
         fs::create_directories(linkDir);
         linkDirectories.push_back(linkDir);
-        wires.push_back(std::make_unique<Signals>("link" + suffix));
-        masters.push_back(std::make_unique<Master>(("master" + suffix).c_str(),
-            p.outstanding, p.stalls, linkDir, i));
-        auto& master = *masters.back();
-        master.requestorName = [system = p.system](uint32_t id) {
-            return system->getRequestorName(id);
-        };
-        master.clk(clock); master.resetn(resetn); master.axi.bind(*wires.back());
+        if (groupedTopology) {
+            linkWiresOwned.push_back(std::make_unique<Signals>("link" + suffix));
+            linkWires.push_back(linkWiresOwned.back().get());
+            std::vector<Signals*> inputs;
+            std::vector<unsigned> phases;
+            for (auto port : linkPorts[i]) inputs.push_back(portWires[port].get());
+            for (auto port : linkPorts[i]) phases.push_back(p.axi_port_phases[port]);
+            muxes.push_back(std::make_unique<AxiMux>(("mux" + suffix).c_str(), inputs,
+                *linkWires.back(), linkPorts[i], p.axi_port_dividers[linkPorts[i][0]],
+                phases, linkDir));
+            muxes.back()->clk(clock); muxes.back()->resetn(resetn);
+            const unsigned localMax = muxes.back()->localMaxId();
+            if (p.outstanding > localMax)
+                throw std::invalid_argument("per-port outstanding slots exceed shared AXI ID range");
+            for (auto port : linkPorts[i]) masters[port]->maxId = localMax;
+        } else {
+            linkWiresOwned.push_back(nullptr);
+            linkWires.push_back(portWires[i].get());
+            muxes.push_back(nullptr);
+        }
 
         if (p.backend == "aou") {
-            master.maxId = 1023;
+            if (!groupedTopology) masters[i]->maxId = 1023;
             std::string ramConfig = p.ramulator_config;
             if (!p.ramulator_configs.empty())
-                ramConfig = vectorValue<std::string>(p.ramulator_configs, i, count,
+                ramConfig = vectorValue<std::string>(p.ramulator_configs, i, linkCount,
                                                       "ramulator_configs");
             aous.push_back(std::make_unique<AouBackend>(("aou" + suffix).c_str(), p,
                 i, linkDir, ramConfig,
-                vectorValue<unsigned>(p.ucie_lanes, i, count, "ucie_lanes"),
-                vectorValue<double>(p.ucie_rates, i, count, "ucie_rates"),
-                vectorValue<unsigned>(p.ucie_bits_per_symbol, i, count,
+                vectorValue<unsigned>(p.ucie_lanes, i, linkCount, "ucie_lanes"),
+                vectorValue<double>(p.ucie_rates, i, linkCount, "ucie_rates"),
+                vectorValue<unsigned>(p.ucie_bits_per_symbol, i, linkCount,
                                       "ucie_bits_per_symbol")));
             rams.push_back(nullptr);
             auto& aou = *aous.back();
-            aou.clk(clock); aou.resetn(resetn); aou.axi.bind(*wires.back());
-            master.functional = [&aou](tlm::tlm_generic_payload& gp) {
-                return aou.access(gp);
-            };
+            aou.clk(clock); aou.resetn(resetn); aou.axi.bind(*linkWires.back());
+            for (auto port : linkPorts[i])
+                masters[port]->functional = [&aou](tlm::tlm_generic_payload& gp) {
+                    return aou.access(gp);
+                };
         } else if (p.backend == "ram") {
             aous.push_back(nullptr);
             rams.push_back(std::make_unique<Ram>(("ram" + suffix).c_str(), p.base,
                 p.size, p.latency, p.stalls));
             auto& ram = *rams.back();
-            ram.clk(clock); ram.resetn(resetn); ram.axi.bind(*wires.back());
-            master.functional = [&ram](tlm::tlm_generic_payload& gp) {
-                return ram.access(gp);
-            };
+            ram.clk(clock); ram.resetn(resetn); ram.axi.bind(*linkWires.back());
+            for (auto port : linkPorts[i])
+                masters[port]->functional = [&ram](tlm::tlm_generic_payload& gp) {
+                    return ram.access(gp);
+                };
         } else throw std::runtime_error("unknown backend");
-
-        wrappers.push_back(std::make_unique<sc_gem5::TlmTargetWrapper<64>>(
-            master.socket, std::string(name()) + ".tlm[" + suffix + "]", i));
         events.push_back(std::make_unique<std::ofstream>(linkDir + "/axi_events.csv"));
         if (!*events.back()) throw std::runtime_error("cannot open AXI trace");
         *events.back() << "tick,cycle,channel,id,address,len,size,data,strb,last,resp\n";
         auto* vcd = sc_create_vcd_trace_file((linkDir + "/axi_wave").c_str());
         vcd->set_time_unit(1, SC_FS);
         sc_trace(vcd, clock, "ACLK"); sc_trace(vcd, resetn, "ARESETn");
-        wires.back()->trace(vcd);
+        linkWires.back()->trace(vcd);
         if (aous.back()) aous.back()->trace(vcd);
         vcds.push_back(vcd);
     }
@@ -200,11 +260,11 @@ void Demo::sample() {
     ++cycle;
     sc_assert(sc_time_stamp().value() == gem5::curTick());
     if (!resetn.read()) return;
-    for (unsigned i = 0; i < wires.size(); ++i) {
+    for (unsigned i = 0; i < linkWires.size(); ++i) {
         auto& m = metrics[i];
         if (!m.measuredCycles) m.firstMeasuredTick = sc_time_stamp().value();
         ++m.measuredCycles; m.lastMeasuredTick = sc_time_stamp().value();
-        auto& w = *wires[i];
+        auto& w = *linkWires[i];
         channel(i,"AW",w.awvalid,w.awready,{Data(w.awid.read()),Data(w.awaddr.read()),Data(w.awlen.read()),Data(w.awsize.read()),Data(w.awburst.read())});
         channel(i,"W",w.wvalid,w.wready,{w.wdata.read(),Data(w.wstrb.read()),Data(w.wlast.read())});
         channel(i,"B",w.bvalid,w.bready,{Data(w.bid.read()),Data(w.bresp.read())});
@@ -219,14 +279,64 @@ void Demo::sample() {
     }
 }
 
+void Demo::materializeGroupedEvidence(unsigned link) {
+    auto translate = [&](const std::string& filename, unsigned idColumn) {
+        std::ofstream out(linkDirectories.at(link) + "/" + filename);
+        bool wroteHeader = false;
+        const auto& members = linkPorts.at(link);
+        for (unsigned localPort = 0; localPort < members.size(); ++localPort) {
+            std::ifstream in(portDirectories.at(members[localPort]) + "/" + filename);
+            std::string line;
+            if (!std::getline(in, line))
+                throw std::runtime_error("missing per-port evidence: " + filename);
+            if (!wroteHeader) { out << line << '\n'; wroteHeader = true; }
+            while (std::getline(in, line)) {
+                std::vector<std::string> fields;
+                std::stringstream row(line);
+                std::string field;
+                while (std::getline(row, field, ',')) fields.push_back(field);
+                if (idColumn >= fields.size())
+                    throw std::runtime_error("invalid per-port evidence: " + filename);
+                fields[idColumn] = std::to_string(
+                    muxes.at(link)->encode(localPort, std::stoul(fields[idColumn])));
+                for (unsigned i = 0; i < fields.size(); ++i) {
+                    if (i) out << ',';
+                    out << fields[i];
+                }
+                out << '\n';
+            }
+        }
+    };
+    translate("transactions.csv", 0);
+    translate("request_segments.csv", 2);
+    translate("request_metadata.csv", 1);
+}
+
 void Demo::writeProtocolSummary(const std::string& path, unsigned link) {
-    auto& master = *masters.at(link); auto& m = metrics.at(link);
+    auto& m = metrics.at(link);
+    uint64_t accepted = 0, completed = 0, maxOutstanding = 0;
+    bool drained = !muxes.at(link) || muxes.at(link)->idle();
+    for (auto port : linkPorts.at(link)) {
+        accepted += masters.at(port)->accepted;
+        completed += masters.at(port)->completed;
+        maxOutstanding += masters.at(port)->maxActive;
+        drained = drained && masters.at(port)->idle();
+    }
     std::ofstream f(path);
-    f << "{\"accepted\":" << master.accepted << ",\"completed\":" << master.completed
-      << ",\"max_outstanding\":" << master.maxActive << ",\"drained\":"
-      << (master.idle() ? "true" : "false") << ",\"ticks_per_second\":"
+    f << "{\"accepted\":" << accepted << ",\"completed\":" << completed
+      << ",\"max_outstanding\":" << maxOutstanding << ",\"drained\":"
+      << (drained ? "true" : "false") << ",\"ticks_per_second\":"
       << gem5::sim_clock::Frequency << ",\"period_ticks\":" << clock.period().value()
       << ",\"axi_data_bits\":" << DataBits << ",\"module\":" << link
+      << ",\"axi_ports\":" << linkPorts.at(link).size() << ",\"member_ports\":[";
+    for (unsigned i = 0; i < linkPorts.at(link).size(); ++i) {
+        if (i) f << ',';
+        f << linkPorts.at(link)[i];
+    }
+    f << "],\"buffered_axi_aggregator\":"
+      << (muxes.at(link) ? "true" : "false")
+      << ",\"input_clock_divider\":"
+      << (muxes.at(link) ? muxes.at(link)->clockRatio() : 1)
       << ",\"measured_cycles\":" << m.measuredCycles
       << ",\"first_measured_tick_fs\":" << m.firstMeasuredTick
       << ",\"last_measured_tick_fs\":" << m.lastMeasuredTick
@@ -247,18 +357,27 @@ void Demo::finish() {
     if (finished) return;
     finished = true;
     uint64_t accepted = 0, completed = 0, maxOutstanding = 0;
-    for (unsigned i = 0; i < masters.size(); ++i) {
+    for (auto& master : masters) master->flushEvidence();
+    for (unsigned i = 0; i < linkWires.size(); ++i) {
         events[i]->flush();
         if (aous[i]) aous[i]->finish(linkDirectories[i]);
+        if (muxes[i]) muxes[i]->finish();
+        if (groupedTopology) materializeGroupedEvidence(i);
         if (vcds[i]) {
             static_cast<sc_gem5::TraceFile*>(vcds[i])->trace(false);
             sc_close_vcd_trace_file(vcds[i]); vcds[i] = nullptr;
         }
         writeProtocolSummary(linkDirectories[i] + "/protocol_summary.json", i);
+    }
+    for (unsigned i = 0; i < portVcds.size(); ++i) {
+        if (portVcds[i]) {
+            static_cast<sc_gem5::TraceFile*>(portVcds[i])->trace(false);
+            sc_close_vcd_trace_file(portVcds[i]); portVcds[i] = nullptr;
+        }
         accepted += masters[i]->accepted; completed += masters[i]->completed;
         maxOutstanding += masters[i]->maxActive;
     }
-    if (masters.size() > 1) {
+    if (linkWires.size() > 1) {
         mergeCsv(directory + "/transactions.csv", linkDirectories, "transactions.csv");
         mergeCsv(directory + "/request_segments.csv", linkDirectories, "request_segments.csv");
         mergeCsv(directory + "/request_metadata.csv", linkDirectories, "request_metadata.csv");
@@ -277,7 +396,8 @@ void Demo::finish() {
           << ",\"drained\":" << (accepted == completed ? "true" : "false")
           << ",\"ticks_per_second\":" << gem5::sim_clock::Frequency
           << ",\"period_ticks\":" << clock.period().value()
-          << ",\"axi_data_bits\":" << DataBits << ",\"modules\":" << masters.size()
+          << ",\"axi_data_bits\":" << DataBits << ",\"modules\":" << linkWires.size()
+          << ",\"axi_ports\":" << masters.size()
           << ",\"measured_cycles\":" << measuredCycles
           << ",\"first_measured_tick_fs\":" << (firstMeasured == UINT64_MAX ? 0 : firstMeasured)
           << ",\"last_measured_tick_fs\":" << lastMeasured
@@ -299,22 +419,34 @@ void Demo::finish() {
               << ",\"blocked_idle_cycles\":" << blockedIdle << '}';
         }
         p << "},\"per_module\":[";
-        for (unsigned i = 0; i < masters.size(); ++i) {
+        for (unsigned i = 0; i < linkWires.size(); ++i) {
             if (i) p << ',';
-            p << "{\"module\":" << i << ",\"accepted\":" << masters[i]->accepted
-              << ",\"completed\":" << masters[i]->completed << '}';
+            uint64_t linkAccepted = 0, linkCompleted = 0;
+            for (auto port : linkPorts[i]) {
+                linkAccepted += masters[port]->accepted;
+                linkCompleted += masters[port]->completed;
+            }
+            p << "{\"module\":" << i << ",\"accepted\":" << linkAccepted
+              << ",\"completed\":" << linkCompleted << '}';
         }
         p << "]}\n";
     }
     std::ofstream topology(directory + "/topology_summary.json");
-    topology << "{\"passed\":true,\"modules\":" << masters.size()
+    topology << "{\"passed\":true,\"modules\":" << linkWires.size()
+      << ",\"axi_ports\":" << masters.size()
       << ",\"policy\":\"" << topologyPolicy
       << "\",\"axi_data_bits\":" << DataBits << ",\"accepted\":" << accepted
       << ",\"completed\":" << completed << ",\"links\":[";
-    for (unsigned i = 0; i < masters.size(); ++i) {
+    for (unsigned i = 0; i < linkWires.size(); ++i) {
         if (i) topology << ',';
         topology << "{\"id\":" << i << ",\"result_dir\":\""
-                 << fs::relative(linkDirectories[i], directory).string() << "\"}";
+                 << fs::relative(linkDirectories[i], directory).string()
+                 << "\",\"member_ports\":[";
+        for (unsigned j = 0; j < linkPorts[i].size(); ++j) {
+            if (j) topology << ',';
+            topology << linkPorts[i][j];
+        }
+        topology << "]}";
     }
     topology << "]}\n";
 }

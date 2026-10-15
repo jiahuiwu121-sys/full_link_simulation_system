@@ -12,6 +12,7 @@ Source('metrics_marker.cc')
 Source('axi_master.cc', append=width_compile)
 Source('axi_ram.cc', append=width_compile)
 Source('axi_demo.cc', append=width_compile)
+Source('axi_mux.cc', append=width_compile)
 Source('packet_tester.cc')
 
 

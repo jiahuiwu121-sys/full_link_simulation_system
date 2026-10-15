@@ -43,3 +43,12 @@ if [[ ! -f build/AXI/gem5.build/config ]]; then
 fi
 "$SS_PREFIX/bin/scons" setconfig build/AXI RUBY=n USE_KVM=y USE_SYSTEMC=y "${build_args[@]}"
 "$SS_PREFIX/bin/scons" build/AXI/gem5.opt "${build_args[@]}" "-j${AXI_JOBS:-6}"
+"$AXI_PYTHON" - "$SS_ROOT/build/active_profile_signature.json" \
+    "$SS_MEMORY_BACKEND" "${SS_AXI_DATA_WIDTH:-256}" <<'PY'
+import hashlib,json,sys
+from pathlib import Path
+path,backend,width=sys.argv[1:]
+inputs={'SS_MEMORY_BACKEND':backend,'SS_AXI_DATA_WIDTH':width}
+signature=hashlib.sha256(json.dumps(inputs,sort_keys=True).encode()).hexdigest()
+Path(path).write_text(json.dumps({'sha256':signature,'inputs':inputs},indent=2)+'\n')
+PY

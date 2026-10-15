@@ -22,7 +22,7 @@ import shutil
 
 SCHEMA = 'storagestacked.metrics.v1'
 COLLECTOR_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-MODULES = ('cpu', 'gpu', 'npu', 'gem5_interconnect', 'tlm', 'axi', 'axi2flit', 'ucie', 'aou_target',
+MODULES = ('cpu', 'gpu', 'npu', 'gem5_interconnect', 'tlm', 'axi', 'axi_aggregator', 'axi2flit', 'ucie', 'aou_target',
            'ramulator_backend', 'backing', 'ramulator2', 'dram_power')
 
 
@@ -296,6 +296,14 @@ def collect(directory):
                           clock_period_fs=protocol.get('period_ticks'), measured_cycles=cycles, channels=channels,
                           data_lane_bytes=lane_bytes, successful_enabled_byte_efficiency=ratio(effective, lane_bytes),
                           denominator='AXI rising edges with reset deasserted')
+    aggregator = load(d, 'axi_aggregator.json')
+    if aggregator is not None:
+        modules['axi_aggregator'] = dict(
+            schema=SCHEMA, module='axi_aggregator', status='measured',
+            arbitration=('per-port ingress/response FIFOs; round-robin complete write bursts '
+                         'and read addresses on the shared fabric'),
+            id_mapping='disjoint 10-bit AXI ID ranges per input port',
+            native_statistics=aggregator)
     fabric_cycles = fabric.get('cycles', 0)
     if aou:
         pack = fabric.get('axi2flit', {})
@@ -614,6 +622,14 @@ def collect(directory):
                    system_total_energy_j=None,system_power_status='Only DRAM has an energy model',
                    metric_consistency_checks=checks, independent_correctness_validation='See *_check.json; metrics consistency is not byte/timing correctness',
                    windows=windows)
+    profile_dir = d / 'system_profile'
+    if profile_dir.is_dir():
+        overall['system_profile'] = dict(
+            requested=load(profile_dir, 'system_profile.json', {}),
+            normalized=load(profile_dir, 'topology_resolved.json', {}),
+            capacity=load(profile_dir, 'capacity_report.json', {}),
+            validation_plan=load(profile_dir, 'validation_plan.json', {}),
+            note='Capacity values are theoretical feasibility bounds; measured results remain in this report.')
     if topology_links:
         def link_power_enabled(link):
             return any(c.get('enabled') for c in link['power'].get('channels', []))
@@ -773,7 +789,7 @@ def collect(directory):
     for value in overall['sources'].values():
         value['full_run_effective_bandwidth_Bps'] = ratio(value['successful_enabled_bytes'],duration)
     overall['native_gem5_global_statistics'] = {k:v for k,v in gstats.items() if '.' not in k}
-    raw_names = ('axi_wave.vcd','axi_events.csv','transactions.csv','request_metadata.csv','request_segments.csv',
+    raw_names = ('axi_wave.vcd','axi_events.csv','axi_aggregator.json','transactions.csv','request_metadata.csv','request_segments.csv',
                  'aou_events.csv','ucie_flits.csv','ucie_soc.csv','ucie_mem.csv','ramulator_bridge.csv',
                  'ramulator_commands.csv','ramulator_final_image.csv','ramulator_timeseries.csv','stats.txt')
     overall['raw_evidence_bytes'] = sum((d/name).stat().st_size for name in raw_names if (d/name).exists())

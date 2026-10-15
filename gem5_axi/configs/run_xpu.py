@@ -36,7 +36,8 @@ p.add_argument('--axi-period',default='666667fs',
                help='AXI256 clock period; default matches the 48 GB/s UCIe raw capacity')
 a=p.parse_args()
 topology=load_topology(a)
-module_count=len(topology['modules'])
+link_count=len(topology['modules'])
+port_count=len(topology.get('axi_ports') or topology['modules'])
 args=SimpleNamespace(**vars(a),env=[],vortex_fast_forward=False,vortex_kernel='',
     vortex_bar_skew=0,npu_auto_start=False,npu_no_share=False)
 for filename in (a.cmd,a.vortex_library,a.npu_library,a.npu_kernel):
@@ -66,7 +67,7 @@ if a.vortex_library:ranges.append(AddrRange(front.VORTEX_BAR[0],size=front.VORTE
 size=0x170000000 if a.vortex_library else 0x30000000
 system.axi=AxiDemo(backend='aou',memory_backend=a.memory_backend,base=0x90000000,size=size,
     period=a.axi_period,
-    ramulator_config='',ramulator_configs=runtime_configs(a,out,module_count,8 if a.vortex_library else 2,topology=topology),
+    ramulator_config='',ramulator_configs=runtime_configs(a,out,link_count,8 if a.vortex_library else 2,topology=topology),
     **simobject_params(topology),
     ramulator_slots=a.ramulator_slots,ramulator_children=a.ramulator_children,
     ramulator_submit_width=a.ramulator_submit_width,
@@ -77,11 +78,11 @@ system.axi=AxiDemo(backend='aou',memory_backend=a.memory_backend,base=0x90000000
 module_ranges=interleaved_ranges(AddrRange,ranges,topology)
 system.bridges=[Gem5ToTlmBridge64(addr_ranges=r) for r in module_ranges]
 for i,bridge in enumerate(system.bridges):bridge.tlm=system.axi.tlm[i]
-if module_count==1:
+if port_count==1:
     target_port=system.bridges[0].gem5
 else:
     system.target_xbar=NoncoherentXBar(
-        width=(a.axi_data_width//8)*module_count,
+        width=(a.axi_data_width//8)*port_count,
         frontend_latency=0,forward_latency=0,response_latency=0,header_latency=0)
     for bridge in system.bridges:system.target_xbar.mem_side_ports=bridge.gem5
     target_port=system.target_xbar.cpu_side_ports

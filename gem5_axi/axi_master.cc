@@ -6,11 +6,13 @@
 namespace storage_axi {
 using namespace sc_core;
 Master::Master(sc_module_name n, unsigned s, bool st, const std::string& dir,
-               unsigned module_index)
+               unsigned module_index, unsigned clock_divider, unsigned clock_phase)
     : sc_module(n), slots(s), stalls(st), trace(dir + "/transactions.csv"),
       segments(dir + "/request_segments.csv"), metadata(dir + "/request_metadata.csv"),
-      moduleIndex(module_index) {
+      moduleIndex(module_index), clockDivider(clock_divider), clockPhase(clock_phase) {
     if (slots == 0 || slots > 65534 || !trace || !segments || !metadata) throw std::runtime_error("invalid master configuration/metrics output");
+    if (!clockDivider || clockPhase >= clockDivider)
+        throw std::runtime_error("invalid AXI input clock divider/phase");
     trace << "id,command,address,bytes,begin_tick,accepted_tick,axi_done_tick,end_resp_tick,segments,requestor,stream,substream,status\n";
     metadata << "uid,id,begin_tick,source_name,enabled_bytes,packet_id\n";
     segments << "uid,segment,id,command,address,bytes,beats,size,enqueue_tick_fs\n";
@@ -136,13 +138,15 @@ void Master::finishSegment(Txn& t) {
 }
 
 void Master::tick() {
-    ++cycle;
+    const unsigned slot = fabricCycle++ % clockDivider;
     if (!resetn.read()) {
         sc_assert(active.empty());
         axi.awvalid = false; axi.wvalid = false; axi.arvalid = false;
         axi.rready = false; axi.bready = false;
         return;
     }
+    if (slot != clockPhase) return;
+    ++cycle;
     if (axi.awvalid.read() && axi.awready.read()) { sc_assert(!awq.empty()); awq.pop_front(); }
     if (axi.arvalid.read() && axi.arready.read()) { sc_assert(!arq.empty()); arq.pop_front(); }
     if (axi.wvalid.read() && axi.wready.read()) {

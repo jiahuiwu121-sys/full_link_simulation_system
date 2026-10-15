@@ -1,0 +1,62 @@
+{
+  "schema": "storagestacked.system.v2",
+  "name": "llm8b-4axi512-ucie64-hbm3",
+  "sources": [
+    {
+      "name": "llm_compute",
+      "type": "traffic",
+      "model_parameters": "8B",
+      "weight_precision": "INT8",
+      "batch": 1,
+      "target_tokens_per_second": 20,
+      "attention": "GQA",
+      "local_sram": true
+    }
+  ],
+  "axi": {
+    "data_width_bits": 512,
+    "clock_period": "1ns"
+  },
+  "axi_ports": [
+    {"name": "axi0", "link": "ucie0", "sources": ["llm_compute"]},
+    {"name": "axi1", "link": "ucie0", "sources": ["llm_compute"]},
+    {"name": "axi2", "link": "ucie0", "sources": ["llm_compute"]},
+    {"name": "axi3", "link": "ucie0", "sources": ["llm_compute"]}
+  ],
+  "ucie_links": [
+    {
+      "name": "ucie0",
+      "lanes": 64,
+      "rate_gtps": 32.0,
+      "modulation": "NRZ",
+      "memory_node": "hbm3_stack0"
+    }
+  ],
+  "memory_nodes": [
+    {
+      "name": "hbm3_stack0",
+      "standard": "HBM3",
+      "channels": 16
+    }
+  ],
+  "routing": {
+    "policy": "address_interleave",
+    "stripe_bytes": 4096
+  },
+  "bridge": {
+    "resource_planes": 4,
+    "tlm_slots": 64,
+    "fabric_clock_ratio": 4
+  },
+  "backend": {
+    "queue": 64,
+    "parent_slots": 64,
+    "child_slots": 512,
+    "submit_width": 8
+  },
+  "requirements": {
+    "minimum_effective_bandwidth_GBps": 230.4,
+    "maximum_bridge_latency_ns": 20,
+    "minimum_link_utilization": 0.9
+  }
+}

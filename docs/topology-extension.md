@@ -7,6 +7,11 @@ memory node，因此真实数据只有一个所有者，不会在多个 backing 
 地址路由器采用非一致性交叉开关，宽度设置为 `AXI字节宽度 × 模块数`，内部路由延迟为零；
 它只负责地址分流，不会在被研究的 AXI/UCIe 路径之前引入额外带宽瓶颈。
 
+除本页原有的一端口一链路 `storagestacked.topology.v1` 外，项目现在也支持
+`storagestacked.system.v2`：多个同位宽 AXI 端口可先经过 `AxiMux` 聚合，再共享一个物理
+AXI2Flit/UCIe/AouTarget/Ramulator2 路径。该配置与自动构建入口见
+[用户系统配置](system-profiles.md)。
+
 ```text
 CPU / GPU / NPU
         |
@@ -186,7 +191,7 @@ python3 gem5_axi/scripts/check_topology.py results/manual-dual
 
 ## 完成边界
 
-本阶段已经完成多个 TLM/AXI/UCIe/内存节点、地址交织、独立数据所有权、全局事务身份、
+本阶段已经完成多个 TLM/AXI/UCIe/内存节点、多个 AXI 端口共享链路、地址交织、独立数据所有权、全局事务身份、
 AXI 构建期宽度、UCIe 运行期几何、逐模块证据和整体统计。当前拓扑是一个 UCIe 模块对应
-一个独立 memory node/stack。多个 UCIe 模块共同进入同一个 Ramulator controller、跨 CPU
+一个独立 memory node/stack；多个 AXI 端口可以进入该模块。多个 UCIe 模块共同进入同一个 Ramulator controller、跨 CPU
 缓存一致性、动态热插拔和任意非二次幂路由属于后续互连/一致性阶段。

@@ -4,13 +4,27 @@ CPU / Vortex GPU / CoralNPU → 原生可配置宽度AXI → AXI2Flit → 可配
 
 第二阶段拓扑扩展已经完成：支持 1/2/4/... 个独立 TLM、AXI、UCIe 和内存节点，按地址
 条带路由；AXI 可在构建时选择 256/512/1024 bit，UCIe 的 lane、速率和调制可按模块配置。
+`storagestacked.system.v2` 系统配置还支持多个 AXI 端口通过周期级仲裁和全局 ID 重映射共享
+一条 AXI2Flit/UCIe/内存路径。配置编译器会检查连接、容量和构建位宽，并在必要时自动重编译。
 每条路径均保留独立原始证据和统计，根目录聚合吞吐/延迟/功耗；在线页面显示逐链路利用率，
 `check_topology.py` 校验地址归属及跨层守恒。配置格式、运行命令、输出证据和当前边界见
-[拓扑扩展说明](docs/topology-extension.md)。
+[拓扑扩展说明](docs/topology-extension.md)和[用户系统配置](docs/system-profiles.md)。
 
 拓扑可用 `memory.standard` 直接生成 HBM3、HBM3E、HBM4、LPDDR5 或 LPDDR6 的 Ramulator2 External 配置
 及匹配功耗输入。`env/run_configuration_matrix.sh` 验收 1/2/4/8 模块与 RP1/2/4 的组合，
 `env/run_axi_width_matrix.sh` 重建并验收 AXI256/512/1024 后恢复默认位宽。
+
+图中 4×AXI512、UCIe x64@32GT/s、单 HBM3 stack 的配置可直接运行：
+
+```bash
+bash env/run_profile.sh configs/system/llm8b-4axi512-ucie64-hbm3.json
+```
+
+同一配置的混合负载曲线与只读/只写饱和验收使用：
+
+```bash
+bash env/run_profile_sweep.sh configs/system/llm8b-4axi512-ucie64-hbm3.json
+```
 
 | 普通源码目录 | 职责 |
 |---|---|

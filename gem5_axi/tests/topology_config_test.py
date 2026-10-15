@@ -57,6 +57,22 @@ assert {m['memory']['standard'] for m in hbm3e['modules']} == {'HBM3E'}
 assert {m['memory']['standard'] for m in lpddr5['modules']} == {'LPDDR5'}
 assert {m['memory']['standard'] for m in lpddr6['modules']} == {'LPDDR6'}
 
+os.environ['SS_AXI_DATA_WIDTH'] = '512'
+profile = load(arguments(
+    topology_config=str(ROOT/'configs/system/llm8b-4axi512-ucie64-hbm3.json'),
+    axi_data_width=512))
+assert len(profile['axi_ports']) == 4
+assert len(profile['modules']) == 1
+assert profile['mapping']['axi_port_to_link'] == [0, 0, 0, 0]
+params = simobject_params(profile)
+assert params['topology_modules'] == 1 and params['topology_ports'] == 4
+assert params['axi_port_dividers'] == [4, 4, 4, 4]
+assert params['axi_port_phases'] == [0, 1, 2, 3]
+ranges = interleaved_ranges(Range, [Range(0x90000000, size=0x10000)], profile)
+assert len(ranges) == 4
+assert [r[0].options['intlvMatch'] for r in ranges] == [0, 1, 2, 3]
+os.environ['SS_AXI_DATA_WIDTH'] = '256'
+
 try:
     for width in (512, 1024):
         os.environ['SS_AXI_DATA_WIDTH'] = str(width)

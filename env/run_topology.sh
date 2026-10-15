@@ -12,6 +12,11 @@ destination=$("$AXI_PYTHON" "$SS_ROOT/env/create_result_dir.py" "$SS_ROOT/result
     ${1:+"$1"} --label "${SS_EXPERIMENT_LABEL:-topology}")
 mkdir -p "$destination"
 echo "结果目录：$destination"
+if [[ -n ${SS_PROFILE_ARTIFACT_DIR:-} ]]; then
+    [[ -d $SS_PROFILE_ARTIFACT_DIR ]] || { echo "配置编译目录不存在：$SS_PROFILE_ARTIFACT_DIR" >&2; exit 1; }
+    mkdir -p "$destination/system_profile"
+    cp -a "$SS_PROFILE_ARTIFACT_DIR"/. "$destination/system_profile/"
+fi
 
 "$AXI_PYTHON" "$AXI_PROJECT_DIR/tests/topology_config_test.py" \
     > "$destination/topology-config-test.log" 2>&1
@@ -36,6 +41,7 @@ link_flags=(--planes "${SS_RESOURCE_PLANES:-1}" --period "${SS_AXI_PERIOD:-66666
 "$AXI_GEM5_BIN" --listener-mode=off -d "$destination" "$AXI_PROJECT_DIR/configs/run.py" \
     --backend aou --memory-backend ramulator2 --mode traffic \
     --topology-config "$topology" --axi-data-width "${SS_AXI_DATA_WIDTH:-256}" \
+    --slots "${SS_TLM_SLOTS:-4}" \
     "${link_flags[@]}" "${ramulator_flags[@]}" \
     --traffic-load-percent "${SS_TRAFFIC_LOAD_PERCENT:-100}" \
     --traffic-warmup "${SS_TRAFFIC_WARMUP:-128}" \
