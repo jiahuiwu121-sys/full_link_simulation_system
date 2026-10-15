@@ -4,6 +4,7 @@
 再读 README.md 和 docs/development.md。若交接资料未分发，以已提交文档为准。
 
 - 主仓库为https://github.com/jiahuiwu121-sys/full_link_simulation_system.git；提交说明用中文，push须有用户明确授权。
+- 新分支使用建立当天日期命名，格式为 `YYYYMMDD`；同一天继续使用该日期分支。
 - ucie-model、axi2flit、gem5_axi、gem5_new、gem5、coralnpu、ramulator2 是主仓库普通目录，直接维护源码。
   不重新建立内部 .git、gitlink 或构建时向内部模块应用补丁。
 - 只有 vortex-gpu/vortex 及其递归依赖是外部子模块，按 env/sources.lock.json 固定版本。
