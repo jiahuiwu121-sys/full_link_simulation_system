@@ -37,20 +37,39 @@ ramulator_flags=(
 [[ ${SS_RAMULATOR_NO_POWER:-0} == 1 ]] && ramulator_flags+=(--ramulator-no-power)
 link_flags=(--planes "${SS_RESOURCE_PLANES:-1}" --period "${SS_AXI_PERIOD:-666667fs}")
 [[ ${SS_AXI_NO_STALLS:-0} == 1 ]] && link_flags+=(--no-stalls)
+[[ ${SS_UCIE_REPLAY:-0} == 1 ]] && link_flags+=(--replay)
+
+mode=${SS_EXECUTION_MODE:-traffic}
+case "$mode" in
+traffic)
+    frontend_flags=(--mode traffic
+        --traffic-load-percent "${SS_TRAFFIC_LOAD_PERCENT:-100}"
+        --traffic-warmup "${SS_TRAFFIC_WARMUP:-128}"
+        --traffic-measure "${SS_TRAFFIC_MEASURE:-1024}"
+        --traffic-cooldown "${SS_TRAFFIC_COOLDOWN:-128}"
+        --traffic-size "${SS_TRAFFIC_SIZE:-256}"
+        --traffic-working-set "${SS_TRAFFIC_WORKING_SET:-1048576}"
+        --traffic-write-percent "${SS_TRAFFIC_WRITE_PERCENT:-50}"
+        --traffic-max-inflight "${SS_TRAFFIC_MAX_INFLIGHT:-64}")
+    ;;
+cpu)
+    [[ -f ${SS_HOST_BINARY:-} ]] || { echo "CPU程序不存在：${SS_HOST_BINARY:-未配置}" >&2; exit 1; }
+    frontend_flags=(--mode cpu --binary "$SS_HOST_BINARY"
+        --options "${SS_HOST_OPTIONS:-}" --process-env-json "$SS_PROCESS_ENV_JSON")
+    [[ -n ${SS_TARGET_SIZE_BYTES:-} ]] && frontend_flags+=(--target-size "$SS_TARGET_SIZE_BYTES")
+    ;;
+*) echo "run_topology.sh不支持执行模式：$mode" >&2; exit 1 ;;
+esac
 
 "$AXI_GEM5_BIN" --listener-mode=off -d "$destination" "$AXI_PROJECT_DIR/configs/run.py" \
-    --backend aou --memory-backend ramulator2 --mode traffic \
+    --backend aou --memory-backend ramulator2 \
     --topology-config "$topology" --axi-data-width "${SS_AXI_DATA_WIDTH:-256}" \
     --slots "${SS_TLM_SLOTS:-4}" \
+    --fdi-fifo-depth "${SS_FDI_FIFO_DEPTH:-8}" \
+    --memory-fifo-depth "${SS_MEMORY_FIFO_DEPTH:-4}" \
+    --max-ticks "${SS_MAX_TICKS:-10000000000000}" \
     "${link_flags[@]}" "${ramulator_flags[@]}" \
-    --traffic-load-percent "${SS_TRAFFIC_LOAD_PERCENT:-100}" \
-    --traffic-warmup "${SS_TRAFFIC_WARMUP:-128}" \
-    --traffic-measure "${SS_TRAFFIC_MEASURE:-1024}" \
-    --traffic-cooldown "${SS_TRAFFIC_COOLDOWN:-128}" \
-    --traffic-size "${SS_TRAFFIC_SIZE:-256}" \
-    --traffic-working-set "${SS_TRAFFIC_WORKING_SET:-1048576}" \
-    --traffic-write-percent "${SS_TRAFFIC_WRITE_PERCENT:-50}" \
-    --traffic-max-inflight "${SS_TRAFFIC_MAX_INFLIGHT:-64}" \
+    "${frontend_flags[@]}" \
     > "$destination/run.log" 2>&1
 
 publish_flags=()

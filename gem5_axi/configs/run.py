@@ -1,12 +1,16 @@
 """Bundled gem5 -> nonblocking TLM -> AXI signals -> independent AXI RAM."""
 import argparse
+import json
 import os
 from pathlib import Path
+import shlex
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "env"))
-from generate_ramulator_config import add_options, runtime_configs
+from generate_ramulator_config import add_options
 from topology_config import add_options as add_topology_options
-from topology_config import load as load_topology, simobject_params, interleaved_ranges, write_resolved
+from topology_config import write_resolved
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from system_builder import connect as connect_target, create_axi, load as load_system_topology
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 from collect_metrics import install as install_metrics
 import m5
@@ -21,6 +25,8 @@ from m5.objects import (
 parser = argparse.ArgumentParser()
 parser.add_argument("--mode", choices=["tester", "cpu", "traffic"], default="tester")
 parser.add_argument("--binary")
+parser.add_argument("--options", default="", help="Shell-style arguments for the CPU binary")
+parser.add_argument("--process-env-json", default="", help="JSON object of CPU process environment variables")
 parser.add_argument("--het-trace", action="store_true",
                     help="Observe target packets using gem5_new HetAxiMonitor")
 parser.add_argument("--backend", choices=["ram", "aou"], default="ram")
@@ -35,6 +41,8 @@ parser.add_argument("--planes", type=int, choices=[1,2,3,4], default=1)
 parser.add_argument("--replay", action="store_true")
 parser.add_argument("--latency", type=int, default=3)
 parser.add_argument("--slots", type=int, default=4)
+parser.add_argument("--fdi-fifo-depth", type=int, default=8)
+parser.add_argument("--memory-fifo-depth", type=int, default=4)
 parser.add_argument("--period", default="666667fs")
 parser.add_argument("--no-stalls", action="store_true")
 parser.add_argument("--response-hold", default="7ns")
@@ -49,9 +57,7 @@ parser.add_argument("--traffic-working-set", type=lambda x: int(x, 0), default=1
 parser.add_argument("--traffic-write-percent", type=int, default=50)
 parser.add_argument("--traffic-max-inflight", type=int, default=64)
 args = parser.parse_args()
-topology = load_topology(args)
-link_count = len(topology['modules'])
-port_count = len(topology.get('axi_ports') or topology['modules'])
+topology, link_count, port_count = load_system_topology(args)
 fabric_clock_ratio = topology.get('bridge', {}).get('fabric_clock_ratio', 1)
 if args.memory_backend in ("memsim", "ramulator2") and args.backend != "aou":
     parser.error("online memory requires --backend aou")
@@ -59,6 +65,8 @@ if min(args.memsim_channels, args.memsim_scale, args.memsim_queue, args.memsim_s
     parser.error("invalid memsim capacities/clock scale")
 if args.mode == "cpu" and not args.binary:
     parser.error("--binary required for CPU mode")
+if min(args.fdi_fifo_depth, args.memory_fifo_depth) < 1:
+    parser.error("protocol FIFO depths must be positive")
 if args.mode == "traffic":
     if not (0 < args.traffic_load_percent <= 400):
         parser.error("--traffic-load-percent must be in (0, 400]")
@@ -91,36 +99,14 @@ host_range = AddrRange(0, size="512MiB")
 target_range = AddrRange(base, size=max(target_size, 16384 if args.mode == "tester" else target_size))
 system.mem_ranges = [host_range, target_range]
 system.host_mem = SimpleMemory(range=host_range, latency="10ns")
-system.axi = AxiDemo(
-    base=base, size=target_size, period=args.period, outstanding=args.slots,
-    backend=args.backend, planes=args.planes, replay=args.replay,
-    memory_backend=args.memory_backend,
-    ramulator_config='',
-    ramulator_configs=runtime_configs(args, out, link_count, topology=topology),
-    **simobject_params(topology), ramulator_slots=args.ramulator_slots,
-    ramulator_children=args.ramulator_children, ramulator_submit_width=args.ramulator_submit_width,
-    ramulator_response_hold=args.ramulator_response_hold,
-    memsim_channels=args.memsim_channels,
-    memsim_scale=args.memsim_scale, memsim_queue=args.memsim_queue,
-    memsim_slots=args.memsim_slots, memsim_response_hold=args.memsim_response_hold,
-    latency=args.latency, stalls=not args.no_stalls, trace_dir=out,
-)
-module_ranges = interleaved_ranges(AddrRange, [target_range], topology)
-system.bridges = [Gem5ToTlmBridge64(addr_ranges=ranges) for ranges in module_ranges]
-for i, bridge in enumerate(system.bridges):
-    bridge.tlm = system.axi.tlm[i]
-if port_count == 1:
-    target_port = system.bridges[0].gem5
-else:
-    # Pure address demultiplexer: size it for all parallel AXI lanes and add
-    # no hidden latency/capacity bottleneck ahead of the modeled links.
-    system.target_xbar = NoncoherentXBar(
-        width=(args.axi_data_width // 8) * port_count,
-        frontend_latency=0, forward_latency=0, response_latency=0,
-        header_latency=0)
-    for bridge in system.bridges:
-        system.target_xbar.mem_side_ports = bridge.gem5
-    target_port = system.target_xbar.cpu_side_ports
+create_axi(system, args, out, topology, base=base, size=target_size,
+           period=args.period, default_channels=2, outstanding=args.slots,
+           planes=args.planes, stalls=not args.no_stalls,
+           legacy_memory=dict(
+               memsim_channels=args.memsim_channels, memsim_scale=args.memsim_scale,
+               memsim_queue=args.memsim_queue, memsim_slots=args.memsim_slots,
+               memsim_response_hold=args.memsim_response_hold, latency=args.latency))
+target_port = connect_target(system, topology, [target_range], args.axi_data_width)
 if args.het_trace:
     from m5.objects import HetAxiMonitor
     trace_path = os.path.join(out, "hettrace")
@@ -169,7 +155,14 @@ else:
     system.cpu.interrupts[0].int_responder = system.membus.mem_side_ports
     system.system_port = system.membus.cpu_side_ports
     system.workload = SEWorkload.init_compatible(args.binary)
-    process = Process(cmd=[os.path.abspath(args.binary)])
+    process = Process(cmd=[os.path.abspath(args.binary)] + shlex.split(args.options))
+    if args.process_env_json:
+        process_environment = json.loads(Path(args.process_env_json).read_text())
+        if (not isinstance(process_environment, dict) or
+                any(not isinstance(k, str) or not isinstance(v, str)
+                    for k, v in process_environment.items())):
+            parser.error("--process-env-json must contain a string-to-string object")
+        process.env = [f"{key}={value}" for key, value in process_environment.items()]
     system.cpu.workload = process
     system.cpu.createThreads()
 
@@ -177,7 +170,7 @@ root = Root(full_system=False, systemc_kernel=SystemC_Kernel(system=system))
 metrics_context = install_metrics(out, args)
 m5.instantiate()
 if args.mode == "cpu":
-    process.map(base, base, 8192, cacheable=False)
+    process.map(base, base, target_size, cacheable=False)
     process.map(0x70000000, 0x70000000, 4096, cacheable=False)
 event = m5.simulate(args.max_ticks)  # Default 10 ms simulated, finite watchdog
 system.axi.finish()

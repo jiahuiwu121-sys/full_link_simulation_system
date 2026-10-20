@@ -1,0 +1,422 @@
+{
+  "$schema": "../../env/profile_schema.json",
+  "_guide": {
+    "用途": "复制本文件、修改name和各模块真实配置，然后交给env/run_system_profile.sh；build_profile.sh、run_profile.sh继续作为兼容入口。",
+    "阅读顺序": "每个真实配置模块之前都有一个以下划线开头的说明块；先查看模块说明和当前系统支持的可选选项，再修改紧随其后的配置。",
+    "说明字段": "所有以下划线开头的字段仅用于二次开发说明；system_profile.json保留它们，运行拓扑会自动剥离。",
+    "单位": "带宽为GB/s（10^9 B/s），容量为字节或GiB，周期支持fs/ps/ns/us，UCIe速率为每lane的GT/s。",
+    "实验口径": "配置生成的容量结果是理论上界；论文结论应使用稳态窗口的实测吞吐、延迟、利用率、队列和功耗。"
+  },
+  "schema": "storagestacked.system.v2",
+  "name": "user-full-link-research",
+  "description": "可直接运行的全链路研究模板；复制后修改，不要覆盖本模板。",
+  "_sources_module": {
+    "模块说明": "声明流量或设备来源，供端口引用、结果归档和实验审计。真实前端由execution.mode启动；来源标签本身不实施设备专属路由或QoS。",
+    "当前系统支持的可选选项": {
+      "name": "任意非空且在sources中唯一的字符串",
+      "type": [
+        "traffic",
+        "cpu",
+        "gpu",
+        "npu"
+      ],
+      "扩展元数据": "允许增加模型、精度、batch、token/s等自定义字段；这些字段只进入归档，不自动改变流量"
+    }
+  },
+  "sources": [
+    {
+      "name": "research_traffic",
+      "type": "traffic",
+      "description": "受控压力流量；CPU/GPU/NPU由同一配置中的execution.mode切换。"
+    }
+  ],
+  "_execution_module": {
+    "模块说明": "选择真正产生请求的前端及其宿主程序。GPU/NPU模式会自动选择XPU构建和run_xpu.py；GPU-only/NPU-only仍包含负责启动设备的宿主CPU。",
+    "当前系统支持的可选选项": {
+      "mode": [
+        "traffic",
+        "cpu",
+        "gpu",
+        "npu",
+        "cpu_gpu",
+        "cpu_npu",
+        "cpu_gpu_npu"
+      ],
+      "host.binary": "项目根目录相对路径或绝对路径；省略时按mode使用项目自带CPU/XPU验收程序",
+      "host.arguments": "字符串数组，不经过Shell执行；GPU模式未提供-k时自动附加gpu.kernel",
+      "host.environment": "传给SE进程的字符串键值对象",
+      "host.target_size_bytes": "CPU目标存储窗口，可选且不小于8192B",
+      "cpu.model": [
+        "X86TimingSimpleCPU"
+      ],
+      "cpu.count": "CPU模式当前必须为1；Vortex模式至少为2；其他XPU模式为大于等于1",
+      "gpu.library": "Vortex SimX libvortex-gem5.so路径",
+      "gpu.runtime_directory": "Vortex host runtime目录",
+      "gpu.kernel": "Vortex .vxbin路径",
+      "npu.library": "CoralNPU libcoralnpu-gem5.so路径",
+      "npu.kernel": "CoralNPU ELF路径"
+    }
+  },
+  "execution": {
+    "mode": "traffic",
+    "host": {
+      "arguments": [],
+      "environment": {}
+    },
+    "cpu": {
+      "model": "X86TimingSimpleCPU"
+    },
+    "gpu": {
+      "library": "vortex-gpu/vxbuild/sim/simx/libvortex-gem5.so",
+      "runtime_directory": "vortex-gpu/vxbuild/sw/runtime",
+      "kernel": "vortex-gpu/vxbuild/tests/regression/vecadd/kernel.vxbin"
+    },
+    "npu": {
+      "library": "coralnpu/bazel-bin/gem5int/libcoralnpu-gem5.so",
+      "kernel": "build/xpu/ddr_touch.elf"
+    }
+  },
+  "_workload_module": {
+    "模块说明": "配置可重复的前端压力流量，包括供给负载、请求阶段、访问粒度、读写比例、工作集和并发度。",
+    "当前系统支持的可选选项": {
+      "mode": [
+        "traffic"
+      ],
+      "load_percent": "大于0且不超过400；100表示按AXI聚合输入能力供给，超过100用于饱和与排队实验",
+      "warmup_requests": "大于等于1的整数",
+      "measure_requests": "大于等于1的整数",
+      "cooldown_requests": "大于等于1的整数",
+      "request_size_bytes": "1到4096的整数；常用研究点为32、64、128、256、1024、2048、4096",
+      "working_set_bytes": "大于等于1，必须是request_size_bytes的整数倍，所含请求块数必须大于max_inflight",
+      "write_percent": "0到100的整数；0为只读，100为只写",
+      "max_inflight": "大于等于1的整数"
+    }
+  },
+  "workload": {
+    "mode": "traffic",
+    "traffic": {
+      "load_percent": 100,
+      "warmup_requests": 128,
+      "measure_requests": 1024,
+      "cooldown_requests": 128,
+      "request_size_bytes": 256,
+      "working_set_bytes": 1048576,
+      "write_percent": 50,
+      "max_inflight": 256
+    }
+  },
+  "_protocol_module": {
+    "模块说明": "选择经过两端和检查器共同验证的协议档案，并配置不改变线格式的外层FDI及AouTarget内存FIFO深度。帧布局、CRC和信用常量由档案整体锁定。",
+    "当前系统支持的可选选项": {
+      "profile": [
+        "aou-format6-256"
+      ],
+      "axi_address_width_bits": [
+        64
+      ],
+      "axi_id_width_bits": [
+        16
+      ],
+      "aou_frame_bytes": [
+        256
+      ],
+      "aou_payload_bytes": [
+        250
+      ],
+      "fdi_fifo_depth": "大于等于1的整数，分别应用于SoC/MEM两个方向的外层FDI FIFO",
+      "memory_fifo_depth": "大于等于1的整数，分别应用于AouTarget请求和响应FIFO"
+    }
+  },
+  "protocol": {
+    "profile": "aou-format6-256",
+    "axi_address_width_bits": 64,
+    "axi_id_width_bits": 16,
+    "aou_frame_bytes": 256,
+    "aou_payload_bytes": 250,
+    "fdi_fifo_depth": 8,
+    "memory_fifo_depth": 4
+  },
+  "_axi_module": {
+    "模块说明": "定义所有逻辑AXI端口的数据位宽和输入时钟。位宽决定每个beat的槽位字节数，周期决定单端口理论带宽。",
+    "当前系统支持的可选选项": {
+      "data_width_bits": [
+        256,
+        512,
+        1024
+      ],
+      "clock_period": "任意正数加fs、ps、ns或us单位，例如666667fs、1ns；必须能被fabric_clock_ratio整除为整数fs",
+      "构建行为": "修改data_width_bits会触发匹配的SystemC端口重编译；clock_period为运行期参数"
+    }
+  },
+  "axi": {
+    "data_width_bits": 512,
+    "clock_period": "1ns"
+  },
+  "_axi_ports_module": {
+    "模块说明": "列出逻辑AXI入口，并把每个入口连接到一条UCIe链路。多个AXI端口可聚合到同一链路。",
+    "当前系统支持的可选选项": {
+      "端口总数": [
+        1,
+        2,
+        4,
+        8,
+        16,
+        32,
+        64
+      ],
+      "name": "任意非空且在axi_ports中唯一的字符串",
+      "link": "必须选择ucie_links中已经声明的一个name",
+      "sources": "由sources[].name组成的无重复字符串数组，可为空",
+      "连接约束": "每条UCIe链路连接的AXI端口数必须相同，并等于fabric_clock_ratio"
+    }
+  },
+  "axi_ports": [
+    {
+      "name": "axi0",
+      "link": "ucie0",
+      "sources": [
+        "research_traffic"
+      ]
+    },
+    {
+      "name": "axi1",
+      "link": "ucie0",
+      "sources": [
+        "research_traffic"
+      ]
+    },
+    {
+      "name": "axi2",
+      "link": "ucie0",
+      "sources": [
+        "research_traffic"
+      ]
+    },
+    {
+      "name": "axi3",
+      "link": "ucie0",
+      "sources": [
+        "research_traffic"
+      ]
+    }
+  ],
+  "_ucie_links_module": {
+    "模块说明": "定义AXI2Flit之后的UCIe物理链路。模型按lane数、每lane速率和调制方式计算双向独立的原始容量。",
+    "当前系统支持的可选选项": {
+      "链路数量": [
+        1,
+        2,
+        4,
+        8,
+        16,
+        32,
+        64
+      ],
+      "name": "任意非空且在ucie_links中唯一的字符串",
+      "lanes": "大于等于1的整数",
+      "rate_gtps": "大于0的有限数，单位为每lane GT/s",
+      "modulation": [
+        "NRZ",
+        "PAM4"
+      ],
+      "memory_node": "必须选择memory_nodes中已经声明且尚未被其他链路占用的一个name",
+      "容量公式": "lanes × rate_gtps × 每UI位数 ÷ 8；NRZ每UI 1bit，PAM4每UI 2bit"
+    }
+  },
+  "ucie_links": [
+    {
+      "name": "ucie0",
+      "lanes": 64,
+      "rate_gtps": 32.0,
+      "modulation": "NRZ",
+      "memory_node": "memory0"
+    }
+  ],
+  "_memory_nodes_module": {
+    "模块说明": "定义UCIe链路后端的Ramulator2内存系统。每个节点拥有独立controller集合、命令流、统计和功耗输出。",
+    "当前系统支持的可选选项": {
+      "节点数量": [
+        1,
+        2,
+        4,
+        8,
+        16,
+        32,
+        64
+      ],
+      "name": "任意非空且在memory_nodes中唯一的字符串",
+      "standard": [
+        "HBM3",
+        "HBM3E",
+        "HBM4",
+        "LPDDR5",
+        "LPDDR6"
+      ],
+      "channels": "正的2次幂，例如1、2、4、8、16、32、64",
+      "config": "可选的Ramulator2 External配置相对路径；如果一个节点提供config，则所有节点都必须提供"
+    }
+  },
+  "memory_nodes": [
+    {
+      "name": "memory0",
+      "standard": "HBM3",
+      "channels": 16
+    }
+  ],
+  "_routing_module": {
+    "模块说明": "定义gem5目标地址如何选择逻辑AXI端口。单端口直接路由，多端口按地址条带交织，请求不会跨端口拆分。",
+    "当前系统支持的可选选项": {
+      "policy": [
+        "single",
+        "address_interleave"
+      ],
+      "policy约束": "1个AXI端口必须使用single；2个及以上AXI端口必须使用address_interleave",
+      "stripe_bytes": "不小于一个AXI beat的2次幂；多端口时必须不小于request_size_bytes且能被request_size_bytes整除"
+    }
+  },
+  "routing": {
+    "policy": "address_interleave",
+    "stripe_bytes": 4096
+  },
+  "_bridge_module": {
+    "模块说明": "配置TLM到AXI、AXI2Flit和AoU桥接链路中的资源隔离、在途事务容量及多AXI端口确定性时分聚合。",
+    "当前系统支持的可选选项": {
+      "resource_planes": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "tlm_slots": "大于等于1；不得超过1023除以单条链路聚合端口数所得的整数上限",
+      "fabric_clock_ratio": [
+        1,
+        2,
+        4,
+        8,
+        16,
+        32,
+        64
+      ],
+      "聚合约束": "每条UCIe链路连接的AXI端口数必须等于fabric_clock_ratio"
+    }
+  },
+  "bridge": {
+    "resource_planes": 4,
+    "tlm_slots": 64,
+    "fabric_clock_ratio": 4
+  },
+  "_backend_module": {
+    "模块说明": "配置AouTarget后的RamulatorBackend容量、每个DRAM tick的提交宽度、响应背压、自动内存时钟实验和DRAMPower开关。backing仍保存唯一真实数据。",
+    "当前系统支持的可选选项": {
+      "queue": "大于等于1的整数，作为每个Ramulator2 controller的读写队列深度",
+      "parent_slots": "大于等于1的整数，完整AXI请求槽数",
+      "child_slots": "大于等于1的整数，32B原生DRAM子事务在途上限",
+      "submit_width": "1到child_slots的整数，每个DRAM native tick最多尝试提交的子事务数",
+      "response_hold_ticks": "大于等于0的整数；0为正常返回，正数用于响应背压实验",
+      "clock_scale": "大于等于1且必须整除8000的整数；仅自动生成的HBM4配置支持，1为标准时钟",
+      "power_enabled": [
+        true,
+        false
+      ]
+    }
+  },
+  "backend": {
+    "queue": 64,
+    "parent_slots": 64,
+    "child_slots": 512,
+    "submit_width": 8,
+    "response_hold_ticks": 0,
+    "clock_scale": 1,
+    "power_enabled": true
+  },
+  "_simulation_module": {
+    "模块说明": "控制仿真看门狗、AXI确定性背压和UCIe CRC/NAK/replay故障注入。",
+    "当前系统支持的可选选项": {
+      "max_ticks": "大于等于1的整数，全局时间单位为1fs",
+      "deterministic_axi_stalls": [
+        true,
+        false
+      ],
+      "ucie_replay": [
+        false,
+        true
+      ],
+      "ucie_replay语义": "true注入固定种子的2%物理Flit错误用于协议恢复验证；性能基线使用false"
+    }
+  },
+  "simulation": {
+    "max_ticks": 10000000000000,
+    "deterministic_axi_stalls": true,
+    "ucie_replay": false
+  },
+  "_observability_module": {
+    "模块说明": "配置Ramulator队列与功耗时间序列采样，以及运行后HTML结果页的HTTP服务和自动打开行为。",
+    "当前系统支持的可选选项": {
+      "metrics_sample_cycles": "大于等于1的整数；最终精确快照始终输出",
+      "visualization_open": [
+        true,
+        false
+      ],
+      "visualization_serve": [
+        true,
+        false
+      ],
+      "view_port": "1到65535的整数"
+    }
+  },
+  "observability": {
+    "metrics_sample_cycles": 1000,
+    "visualization_open": true,
+    "visualization_serve": true,
+    "view_port": 8000
+  },
+  "_sweep_module": {
+    "模块说明": "定义批量实验矩阵，用混合流量寻找带宽—延迟拐点，并用只读和只写高负载检查两个链路方向。",
+    "当前系统支持的可选选项": {
+      "mixed_load_percent": "由(0,400]范围有限数组成的非空数组",
+      "saturation_load_percent": "由(0,400]范围有限数组成的非空数组",
+      "directions": [
+        "mixed",
+        "read",
+        "write"
+      ],
+      "directions组合": "上述值的任意非空、无重复组合",
+      "mixed_write_percent": "0到100的整数"
+    }
+  },
+  "sweep": {
+    "mixed_load_percent": [
+      10,
+      25,
+      50,
+      75,
+      90,
+      100,
+      110,
+      125
+    ],
+    "saturation_load_percent": [
+      100,
+      125
+    ],
+    "directions": [
+      "mixed",
+      "read",
+      "write"
+    ],
+    "mixed_write_percent": 50
+  },
+  "_requirements_module": {
+    "模块说明": "给实验设置容量与性能验收阈值。编译阶段先拒绝理论容量不可能满足的配置，运行阶段再根据实测结果判定。",
+    "当前系统支持的可选选项": {
+      "minimum_effective_bandwidth_GBps": "大于等于0的有限数，单位GB/s；0表示不设最低值",
+      "maximum_bridge_latency_ns": "大于等于0的有限数，单位ns；0表示不设最大值",
+      "minimum_link_utilization": "大于0且不超过1的有限数；例如0.9表示90%"
+    }
+  },
+  "requirements": {
+    "minimum_effective_bandwidth_GBps": 230.4,
+    "maximum_bridge_latency_ns": 20,
+    "minimum_link_utilization": 0.9
+  }
+}

@@ -30,10 +30,10 @@ struct AouBackend::Fabric : sc_module {
     sc_signal<FlitTransfer> tx, rx;
     sc_signal<bool> txr, rxr;
     Stats stats;
-    sc_fifo<FdiFlit> soc_tx{"soc_tx", 8}, soc_rx{"soc_rx", 8};
-    sc_fifo<FdiFlit> mem_tx{"mem_tx", 8}, mem_rx{"mem_rx", 8};
-    sc_fifo<SimpleMemRequest> requests{"requests", 4};
-    sc_fifo<SimpleMemResponse> responses{"responses", 4};
+    sc_fifo<FdiFlit> soc_tx, soc_rx;
+    sc_fifo<FdiFlit> mem_tx, mem_rx;
+    sc_fifo<SimpleMemRequest> requests;
+    sc_fifo<SimpleMemResponse> responses;
     Axi2Flit bridge;
     UcieAouAdapter adapter;
     UcieLink link;
@@ -84,6 +84,10 @@ struct AouBackend::Fabric : sc_module {
            const std::string& trace_dir, const std::string& ramulator_config,
            unsigned lanes, double rate, unsigned bits)
       : sc_module(n), owner(o), cfg(config(p.replay, lanes, rate, bits)), planes(p.planes),
+        soc_tx("soc_tx", p.fdi_fifo_depth), soc_rx("soc_rx", p.fdi_fifo_depth),
+        mem_tx("mem_tx", p.fdi_fifo_depth), mem_rx("mem_rx", p.fdi_fifo_depth),
+        requests("requests", p.memory_fifo_depth),
+        responses("responses", p.memory_fifo_depth),
         bridge("bridge", planes), adapter("adapter", cfg),
         link("link", cfg, &stats, sc_time(cfg.ui_fs(), SC_FS)),
         target("target", cfg, planes),
@@ -233,7 +237,13 @@ struct AouBackend::Fabric : sc_module {
         const unsigned depths[] = {unsigned(soc_tx.num_available()), unsigned(soc_rx.num_available()),
             unsigned(mem_tx.num_available()), unsigned(mem_rx.num_available()),
             unsigned(requests.num_available()), unsigned(responses.num_available())};
-        const unsigned capacities[] = {8, 8, 8, 8, 4, 4};
+        const unsigned capacities[] = {
+            unsigned(soc_tx.num_available() + soc_tx.num_free()),
+            unsigned(soc_rx.num_available() + soc_rx.num_free()),
+            unsigned(mem_tx.num_available() + mem_tx.num_free()),
+            unsigned(mem_rx.num_available() + mem_rx.num_free()),
+            unsigned(requests.num_available() + requests.num_free()),
+            unsigned(responses.num_available() + responses.num_free())};
         for (unsigned i = 0; i < 6; ++i) {
             auto& q = fifo_metrics[i]; q.sum += depths[i]; q.peak = std::max<uint64_t>(q.peak, depths[i]);
             q.full += depths[i] == capacities[i];

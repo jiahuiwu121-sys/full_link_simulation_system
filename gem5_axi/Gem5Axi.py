@@ -34,6 +34,8 @@ class AxiDemo(SystemC_ScModule):
     ramulator_children = Param.Unsigned(32, 'Bounded native transactions')
     ramulator_submit_width = Param.Unsigned(8, 'Maximum native child submissions per DRAM tick')
     ramulator_response_hold = Param.Unsigned(0, 'Response hold in DRAM ticks')
+    fdi_fifo_depth = Param.Unsigned(8, 'Outer FDI FIFO entries in each direction')
+    memory_fifo_depth = Param.Unsigned(4, 'AouTarget request/response FIFO entries')
     memsim_channels = Param.Unsigned(2, 'HBM4 channel count for integration')
     memsim_scale = Param.Unsigned(1, 'Multiply native HBM clock period')
     memsim_queue = Param.Unsigned(4, 'Native ingress/controller/response capacity')

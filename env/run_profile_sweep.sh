@@ -11,6 +11,20 @@ name=$(basename -- "$profile" .json)
 
 bash "$SS_ROOT/env/build_profile.sh" "$profile"
 compiled="$SS_ROOT/build/system_profiles/$name"
+profile_mode=$("$AXI_PYTHON" - "$compiled/frontend_plan.json" <<'PY'
+import json,sys
+print(json.load(open(sys.argv[1]))['mode'])
+PY
+)
+[[ $profile_mode == traffic ]] || {
+    echo "负载百分比扫描仅适用于execution.mode=traffic，当前为：$profile_mode" >&2
+    exit 1
+}
+# The profile is the source of truth for an explicitly configured sweep.
+# Profiles without a sweep section do not emit these variables, preserving
+# the historical environment-variable override behavior.
+# shellcheck disable=SC1090
+source "$compiled/run.env"
 destination=$("$AXI_PYTHON" "$SS_ROOT/env/create_result_dir.py" "$SS_ROOT/results" \
     ${requested_result:+"$requested_result"} --label "${SS_EXPERIMENT_LABEL:-$name-sweep}")
 mkdir -p "$destination/system_profile"

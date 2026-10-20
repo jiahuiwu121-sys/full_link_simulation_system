@@ -1,8 +1,25 @@
 # 用户系统配置与自动匹配
 
-`storagestacked.system.v2` 把用户需求写成一张可执行系统图。配置编译器先检查端点、链路、
-内存和容量，再生成构建参数、运行参数、理论容量报告和验收计划。运行入口会比较构建签名；
-AXI 位宽或后端发生变化时自动重编译，运行参数变化不触发无意义的重编译。
+`storagestacked.system.v2`把用户需求写成一张可执行系统图。配置编译器先检查真实前端、协议
+档案、端点、链路、内存和容量，再生成构建参数、运行参数、前端启动计划、理论容量报告和
+验收计划。统一入口比较构建签名；AXI位宽、前端构建族或协议档案变化时自动选择
+`build.sh`/`build_xpu.sh`，运行参数变化不触发无意义的重编译。
+
+完整可复制模板位于[`../configs/user/full-link-research-template.json`](../configs/user/full-link-research-template.json)，
+除系统图外还可配置压力流量、仿真注错、后端功耗、指标采样、HTML服务和扫描矩阵。模板在
+每个模块之前说明模块作用并列出当前支持选项；补充约束及仍为源码常量的参数见
+[`../configs/user/README.md`](../configs/user/README.md)。
+
+统一运行命令：
+
+```bash
+bash env/run_system_profile.sh configs/user/my-system.json
+```
+
+`execution.mode`支持`traffic/cpu/gpu/npu/cpu_gpu/cpu_npu/cpu_gpu_npu`。编译器输出的
+`frontend_plan.json`记录实际宿主程序、参数、设备库、kernel和CPU上下文数；
+`protocol_profile.json`记录两端共同使用的AoU档案及运行期FIFO深度。GPU/NPU模式由宿主CPU
+启动设备，统一入口自动检查并按需构建XPU产物。
 
 ## 当前可执行图
 
@@ -74,10 +91,10 @@ B/R 由每端口响应 FIFO 降速返回。
 bash env/build_profile.sh configs/system/llm8b-4axi512-ucie64-hbm3.json
 ```
 
-自动生成配置、按需构建、运行压力流量、校验并发布可视化：
+自动生成配置、按需构建、运行配置所选前端、校验并发布可视化：
 
 ```bash
-bash env/run_profile.sh configs/system/llm8b-4axi512-ucie64-hbm3.json
+bash env/run_system_profile.sh configs/system/llm8b-4axi512-ucie64-hbm3.json
 ```
 
 运行完整负载曲线以及只读/只写方向饱和验证：

@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from collect_metrics import collect, distribution
+from collect_metrics import MODULES, collect, distribution
 
 
 def write_csv(d,name,records):
@@ -38,7 +38,7 @@ class MetricsContract(unittest.TestCase):
             self.assertEqual(r['overall']['latency']['p99_fs'],16)
             self.assertIsNone(r['overall']['dram_energy_j'])
             self.assertIsNone(r['overall']['system_total_energy_j'])
-            self.assertEqual(len(list((d/'metrics').glob('*.json'))),14)
+            self.assertEqual(len(list((d/'metrics').glob('*.json'))),len(MODULES)+1)
             diagnostic=json.loads((d/'link_diagnostics.json').read_text())
             full=diagnostic['windows'][0]
             self.assertEqual(full['inflight']['request_time_integral_fs'],28)

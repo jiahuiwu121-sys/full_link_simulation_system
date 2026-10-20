@@ -17,8 +17,14 @@ CPU / Vortex GPU / CoralNPU → 原生可配置宽度AXI → AXI2Flit → 可配
 图中 4×AXI512、UCIe x64@32GT/s、单 HBM3 stack 的配置可直接运行：
 
 ```bash
-bash env/run_profile.sh configs/system/llm8b-4axi512-ucie64-hbm3.json
+bash env/run_system_profile.sh configs/system/llm8b-4axi512-ucie64-hbm3.json
 ```
+
+研究人员可从[`configs/user/full-link-research-template.json`](configs/user/full-link-research-template.json)
+复制一份完整用户配置。该模板同时暴露真实traffic/CPU/GPU/NPU前端、已验证协议档案、
+AXI、聚合器、UCIe、内存、Ramulator2容量、功耗、采样、负载扫描和验收目标；统一入口为
+`bash env/run_system_profile.sh <配置.json>`，`run_profile.sh`保留为兼容别名。字段说明与边界见
+[`configs/user/README.md`](configs/user/README.md)。
 
 同一配置的混合负载曲线与只读/只写饱和验收使用：
 

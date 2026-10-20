@@ -2,35 +2,610 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "storagestacked.system.v2",
   "title": "StorageStacked user system profile",
-  "type": "object",
-  "required": ["schema", "name", "axi", "axi_ports", "ucie_links", "memory_nodes"],
-  "properties": {
-    "schema": {"const": "storagestacked.system.v2"},
-    "name": {"type": "string", "minLength": 1},
-    "axi": {
+  "description": "Executable full-link traffic, topology, memory, power and reporting configuration.",
+  "$defs": {
+    "help": {
       "type": "object",
-      "required": ["data_width_bits", "clock_period"],
+      "description": "Human-readable authoring notes ignored by the simulator.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "module_note": {
+      "type": "object",
+      "description": "Human-readable module description placed immediately before its executable configuration.",
+      "required": [
+        "模块说明",
+        "当前系统支持的可选选项"
+      ],
       "properties": {
-        "data_width_bits": {"enum": [256, 512, 1024]},
-        "clock_period": {"type": "string"}
+        "模块说明": {
+          "type": "string",
+          "minLength": 1
+        },
+        "当前系统支持的可选选项": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "required": [
+    "schema",
+    "name",
+    "axi",
+    "axi_ports",
+    "ucie_links",
+    "memory_nodes"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "_guide": {
+      "$ref": "#/$defs/help"
+    },
+    "schema": {
+      "const": "storagestacked.system.v2"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "_sources_module": {
+      "$ref": "#/$defs/module_note"
+    },
+    "sources": {
+      "type": "array",
+      "description": "Audit labels and research metadata; they do not enforce device QoS routing.",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "type"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "enum": [
+              "traffic",
+              "cpu",
+              "gpu",
+              "npu"
+            ]
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "_execution_module": {
+      "$ref": "#/$defs/module_note"
+    },
+    "execution": {
+      "type": "object",
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "traffic",
+            "cpu",
+            "gpu",
+            "npu",
+            "cpu_gpu",
+            "cpu_npu",
+            "cpu_gpu_npu"
+          ]
+        },
+        "host": {
+          "type": "object",
+          "properties": {
+            "binary": {
+              "type": "string",
+              "minLength": 1
+            },
+            "arguments": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "environment": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "target_size_bytes": {
+              "type": "integer",
+              "minimum": 8192
+            }
+          },
+          "additionalProperties": false
+        },
+        "cpu": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "const": "X86TimingSimpleCPU"
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "gpu": {
+          "type": "object",
+          "properties": {
+            "library": {
+              "type": "string",
+              "minLength": 1
+            },
+            "runtime_directory": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kernel": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "npu": {
+          "type": "object",
+          "properties": {
+            "library": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kernel": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },
-    "axi_ports": {"type": "array", "minItems": 1},
-    "ucie_links": {"type": "array", "minItems": 1},
-    "memory_nodes": {"type": "array", "minItems": 1},
-    "sources": {"type": "array"},
-    "routing": {"type": "object"},
+    "_workload_module": {
+      "$ref": "#/$defs/module_note"
+    },
+    "workload": {
+      "type": "object",
+      "description": "Controlled pressure-generator settings; used when execution.mode is traffic and retained for comparable sweeps in other profiles.",
+      "properties": {
+        "mode": {
+          "const": "traffic"
+        },
+        "traffic": {
+          "type": "object",
+          "properties": {
+            "load_percent": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 400
+            },
+            "warmup_requests": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "measure_requests": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "cooldown_requests": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "request_size_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4096
+            },
+            "working_set_bytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "write_percent": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "max_inflight": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "description": "working_set_bytes must be a request-size multiple and contain more blocks than max_inflight.",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "_protocol_module": {
+      "$ref": "#/$defs/module_note"
+    },
+    "protocol": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "enum": [
+            "aou-format6-256"
+          ]
+        },
+        "axi_address_width_bits": {
+          "const": 64
+        },
+        "axi_id_width_bits": {
+          "const": 16
+        },
+        "aou_frame_bytes": {
+          "const": 256
+        },
+        "aou_payload_bytes": {
+          "const": 250
+        },
+        "fdi_fifo_depth": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "memory_fifo_depth": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "_axi_module": {
+      "$ref": "#/$defs/module_note"
+    },
+    "axi": {
+      "type": "object",
+      "required": [
+        "data_width_bits",
+        "clock_period"
+      ],
+      "properties": {
+        "data_width_bits": {
+          "enum": [
+            256,
+            512,
+            1024
+          ]
+        },
+        "clock_period": {
+          "type": "string",
+          "pattern": "^[0-9]+(?:\\.[0-9]+)?(?:fs|ps|ns|us)$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "_axi_ports_module": {
+      "$ref": "#/$defs/module_note"
+    },
+    "axi_ports": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "link"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "link": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "_ucie_links_module": {
+      "$ref": "#/$defs/module_note"
+    },
+    "ucie_links": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "lanes",
+          "rate_gtps",
+          "modulation",
+          "memory_node"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lanes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "rate_gtps": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "modulation": {
+            "enum": [
+              "NRZ",
+              "PAM4"
+            ]
+          },
+          "memory_node": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "_memory_nodes_module": {
+      "$ref": "#/$defs/module_note"
+    },
+    "memory_nodes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "standard",
+          "channels"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "standard": {
+            "enum": [
+              "HBM3",
+              "HBM3E",
+              "HBM4",
+              "LPDDR5",
+              "LPDDR6"
+            ]
+          },
+          "channels": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "config": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "_routing_module": {
+      "$ref": "#/$defs/module_note"
+    },
+    "routing": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "enum": [
+            "single",
+            "address_interleave"
+          ]
+        },
+        "stripe_bytes": {
+          "type": "integer",
+          "minimum": 32
+        }
+      },
+      "additionalProperties": false
+    },
+    "_bridge_module": {
+      "$ref": "#/$defs/module_note"
+    },
     "bridge": {
       "type": "object",
       "properties": {
-        "resource_planes": {"enum": [1, 2, 3, 4]},
-        "tlm_slots": {"type": "integer", "minimum": 1},
-        "fabric_clock_ratio": {"enum": [1, 2, 4, 8, 16, 32, 64]}
-      }
+        "resource_planes": {
+          "enum": [
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        "tlm_slots": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fabric_clock_ratio": {
+          "enum": [
+            1,
+            2,
+            4,
+            8,
+            16,
+            32,
+            64
+          ]
+        }
+      },
+      "additionalProperties": false
     },
-    "backend": {"type": "object"},
-    "requirements": {"type": "object"}
+    "_backend_module": {
+      "$ref": "#/$defs/module_note"
+    },
+    "backend": {
+      "type": "object",
+      "properties": {
+        "queue": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "parent_slots": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "child_slots": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "submit_width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "response_hold_ticks": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "clock_scale": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "power_enabled": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "_simulation_module": {
+      "$ref": "#/$defs/module_note"
+    },
+    "simulation": {
+      "type": "object",
+      "properties": {
+        "max_ticks": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "deterministic_axi_stalls": {
+          "type": "boolean"
+        },
+        "ucie_replay": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "_observability_module": {
+      "$ref": "#/$defs/module_note"
+    },
+    "observability": {
+      "type": "object",
+      "properties": {
+        "metrics_sample_cycles": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "visualization_open": {
+          "type": "boolean"
+        },
+        "visualization_serve": {
+          "type": "boolean"
+        },
+        "view_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      },
+      "additionalProperties": false
+    },
+    "_sweep_module": {
+      "$ref": "#/$defs/module_note"
+    },
+    "sweep": {
+      "type": "object",
+      "properties": {
+        "mixed_load_percent": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 400
+          }
+        },
+        "saturation_load_percent": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 400
+          }
+        },
+        "directions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "mixed",
+              "read",
+              "write"
+            ]
+          }
+        },
+        "mixed_write_percent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "additionalProperties": false
+    },
+    "_requirements_module": {
+      "$ref": "#/$defs/module_note"
+    },
+    "requirements": {
+      "type": "object",
+      "properties": {
+        "minimum_effective_bandwidth_GBps": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maximum_bridge_latency_ns": {
+          "type": "number",
+          "minimum": 0
+        },
+        "minimum_link_utilization": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        }
+      },
+      "additionalProperties": false
+    }
   },
-  "additionalProperties": true
+  "additionalProperties": false
 }
