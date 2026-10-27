@@ -457,6 +457,12 @@
             32,
             64
           ]
+        },
+        "implementation": {
+          "enum": [
+            "systemc",
+            "rtl"
+          ]
         }
       },
       "additionalProperties": false

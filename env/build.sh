@@ -16,6 +16,11 @@ for dependency in yaml-cpp fmt dramutils nlohmann_json; do
 done
 backend_args=("SS_HAVE_MEMSIM=0")
 backend_args+=("SS_AXI_DATA_WIDTH=${SS_AXI_DATA_WIDTH:-256}")
+backend_args+=("SS_STORAGE_BRIDGE_IMPL=${SS_STORAGE_BRIDGE_IMPL:-systemc}")
+backend_args+=("SS_RESOURCE_PLANES=${SS_RESOURCE_PLANES:-1}")
+if [[ ${SS_STORAGE_BRIDGE_IMPL:-systemc} == rtl ]]; then
+    bash "$SS_ROOT/env/build_storage_bridge_rtl.sh"
+fi
 case "$SS_MEMORY_BACKEND" in
 ramulator2)
     cmake -S "$RAMULATOR_HOME" -B "$RAMULATOR_BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -27,7 +32,9 @@ memsim)
     # The legacy backend remains optional and requires matching external delivery.
     cmake -S "$MEMSIM_HOME" -B "$MEMSIM_BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_CXX_COMPILER=$AXI_CXX"
     cmake --build "$MEMSIM_BUILD" -j "${AXI_JOBS:-6}"
-    backend_args=("SS_HAVE_MEMSIM=1" "SS_AXI_DATA_WIDTH=${SS_AXI_DATA_WIDTH:-256}")
+    backend_args=("SS_HAVE_MEMSIM=1" "SS_AXI_DATA_WIDTH=${SS_AXI_DATA_WIDTH:-256}"
+        "SS_STORAGE_BRIDGE_IMPL=${SS_STORAGE_BRIDGE_IMPL:-systemc}"
+        "SS_RESOURCE_PLANES=${SS_RESOURCE_PLANES:-1}")
     # The gem5 binary supports both branches when legacy support is enabled.
     cmake -S "$RAMULATOR_HOME" -B "$RAMULATOR_BUILD" -G Ninja "-DCMAKE_CXX_COMPILER=$AXI_CXX" \
         -DRAMULATOR_PYTHON_BINDINGS=OFF -DRAMULATOR_ONLINE_INTEGRATION=ON "${ramulator_sources[@]}"
@@ -49,13 +56,16 @@ mkdir -p "$AXI_PROJECT_DIR/build"
     -Wl,-e,_start "$AXI_PROJECT_DIR/workloads/ramulator_check.c" \
     -o "$AXI_PROJECT_DIR/build/ramulator_check"
 "$AXI_PYTHON" - "$SS_ROOT/build/active_profile_signature.json" \
-    "$SS_MEMORY_BACKEND" "${SS_AXI_DATA_WIDTH:-256}" \
+    "$SS_MEMORY_BACKEND" "${SS_AXI_DATA_WIDTH:-256}" "${SS_STORAGE_BRIDGE_IMPL:-systemc}" \
+    "${SS_RESOURCE_PLANES:-1}" \
     "${SS_FRONTEND_FAMILY:-classic}" "${SS_PROTOCOL_PROFILE:-aou-format6-256}" \
     "${SS_AXI_ADDRESS_WIDTH:-64}" "${SS_AXI_ID_WIDTH:-16}" <<'PY'
 import hashlib,json,sys
 from pathlib import Path
-path,backend,width,frontend,protocol,address_width,id_width=sys.argv[1:]
+path,backend,width,bridge_impl,planes,frontend,protocol,address_width,id_width=sys.argv[1:]
 inputs={'SS_MEMORY_BACKEND':backend,'SS_AXI_DATA_WIDTH':width,
+        'SS_STORAGE_BRIDGE_IMPL':bridge_impl,
+        'SS_RESOURCE_PLANES':planes,
         'SS_FRONTEND_FAMILY':frontend,'SS_PROTOCOL_PROFILE':protocol,
         'SS_AXI_ADDRESS_WIDTH':address_width,'SS_AXI_ID_WIDTH':id_width}
 signature=hashlib.sha256(json.dumps(inputs,sort_keys=True).encode()).hexdigest()

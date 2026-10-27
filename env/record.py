@@ -63,6 +63,7 @@ manifest = {
     "scons": command(str(prefix / "bin/scons"), "--version"),
     "packages": [{k: p[k] for k in ("name", "version", "build", "url", "md5")} for p in packages],
     "memory_backend": backend,
+    "storage_bridge_implementation": os.environ.get('SS_STORAGE_BRIDGE_IMPL', 'systemc'),
     "ramulator_library_sha256": sha(root / 'build/ramulator2/lib/libstoragestacked_ramulator2.so'),
     "binary": str(binary), "binary_sha256": sha(binary), "ldd": linked,
     "gem5_build_config": (root / "gem5/build/AXI/gem5.build/config").read_text(),
@@ -70,6 +71,23 @@ manifest = {
     "sources": sources,
     "environment_files_sha256": {p.name: sha(p) for p in sorted((root / "env").iterdir()) if p.is_file()},
 }
+if manifest['storage_bridge_implementation'] == 'rtl':
+    width = os.environ.get('SS_AXI_DATA_WIDTH', '256')
+    planes = os.environ.get('SS_RESOURCE_PLANES', '1')
+    rtl_directory = root / f'build/storage_bridge-rtl-{width}-rp{planes}'
+    rtl_library = rtl_directory / 'libVstorage_bridge_top.a'
+    if not rtl_library.is_file():
+        raise SystemExit('Missing configured StorageBridge RTL model: ' + str(rtl_library))
+    rtl_symbols = command('nm', '-a', '-C', str(rtl_library))
+    if any(token in rtl_symbols for token in ('sc_core::', 'sc_dt::', 'sc_main')):
+        raise SystemExit('StorageBridge RTL model contains a second SystemC implementation')
+    manifest['storage_bridge_rtl'] = {
+        'axi_data_width': int(width), 'resource_planes': int(planes),
+        'verilator': command('verilator', '--version'),
+        'model_library': str(rtl_library),
+        'model_library_sha256': sha(rtl_library),
+        'embedded_systemc_symbols': 0,
+    }
 native_library = root / 'build/ramulator2/lib/libstoragestacked_ramulator2.so'
 native_linked = command('ldd', str(native_library))
 if 'not found' in native_linked or 'libsystemc' in native_linked.lower():

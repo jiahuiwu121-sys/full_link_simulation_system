@@ -62,7 +62,31 @@ def check(directory, replay=False):
     if replay:
         assert s['crc_errors'] > 0 and s['forward_replays']+s['reverse_replays'] > 0
     else:
-        assert s['crc_errors'] == s['forward_replays'] == s['reverse_replays'] == 0
+        # A clean PHY can still replay after a retry timeout when the receiving
+        # FDI FIFO is backpressured for longer than the ACK window.  This is a
+        # reliability event, not corruption: every resent frame must be
+        # recognized as a duplicate, and there must be no CRC, NAK or sequence
+        # error.  The RTL endpoint intentionally makes this case observable
+        # because it consumes one decoded AoU message per bridge cycle.
+        assert s['crc_errors'] == 0
+        fabric_path = directory/'fabric_metrics.json'
+        if fabric_path.exists():
+            fabric = json.loads(fabric_path.read_text()).get('ucie', {})
+            for direction, replay_key in (('forward', 'forward_replays'),
+                                          ('reverse', 'reverse_replays')):
+                counters = fabric[direction]
+                count = s[replay_key]
+                assert counters['tx_replay_flits'] == count
+                assert counters['crc_fail_count'] == counters['nak_count'] == 0
+                assert counters['seq_fail_count'] == 0
+                assert counters['duplicate_drop_count'] == count
+                if count:
+                    assert counters['replay_timeout_events'] > 0
+        else:
+            # Older result sets did not save the cause counters.  Keep their
+            # original strict interpretation rather than accepting an
+            # unexplained replay.
+            assert s['forward_replays'] == s['reverse_replays'] == 0
     # Independently recover wide W/R data from the VCD's pre-edge snapshot.
     values, recovered, flits = {}, [], collections.Counter()
     held = {}

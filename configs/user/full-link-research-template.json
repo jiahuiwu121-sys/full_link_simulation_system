@@ -297,13 +297,19 @@
         32,
         64
       ],
+      "implementation": [
+        "systemc",
+        "rtl"
+      ],
+      "implementation说明": "systemc为逐事务参考模型；rtl为Verilator执行的可综合协议桥，二者连接相同FDI与Ramulator2后端，适合做差分验证。",
       "聚合约束": "每条UCIe链路连接的AXI端口数必须等于fabric_clock_ratio"
     }
   },
   "bridge": {
     "resource_planes": 4,
     "tlm_slots": 64,
-    "fabric_clock_ratio": 4
+    "fabric_clock_ratio": 4,
+    "implementation": "systemc"
   },
   "_backend_module": {
     "模块说明": "配置AouTarget后的RamulatorBackend容量、每个DRAM tick的提交宽度、响应背压、自动内存时钟实验和DRAMPower开关。backing仍保存唯一真实数据。",

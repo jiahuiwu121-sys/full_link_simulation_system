@@ -28,6 +28,8 @@ class AxiDemo(SystemC_ScModule):
     planes = Param.Unsigned(1, 'AoU resource planes (1..4)')
     replay = Param.Bool(False, 'Inject reproducible 2% physical flit errors')
     memory_backend = Param.String('simple', 'simple, ramulator2 or optional memsim after UCIe')
+    storage_bridge_implementation = Param.String(
+        'systemc', 'systemc reference model or Verilated rtl protocol bridge')
     ramulator_config = Param.String('', 'Fully expanded External Ramulator2 config')
     ramulator_configs = VectorParam.String([], 'One expanded Ramulator2 config per memory node')
     ramulator_slots = Param.Unsigned(8, 'Bounded in-flight AXI bursts')

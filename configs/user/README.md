@@ -47,7 +47,7 @@ XPU构建，并在构建签名不匹配时自动重建。随后它调用traffic/
 |`ucie_links[]`|lane、GT/s、NRZ/PAM4、目标内存节点|lane和速率为正数；最多64条链路|
 |`memory_nodes[]`|HBM3/HBM3E/HBM4/LPDDR5/LPDDR6、controller数、自定义配置|controller数必须为正的2次幂|
 |`routing`|`single/address_interleave`及条带大小|多端口必须交织；条带为2的幂且覆盖完整请求|
-|`bridge`|Resource Plane、TLM在途槽、聚合器时钟比|RP为1..4；每条链路的AXI端口数必须等于时钟比|
+|`bridge`|Resource Plane、TLM在途槽、聚合器时钟比、`systemc/rtl`存储桥实现|RP为1..4；每条链路的AXI端口数必须等于时钟比；RTL接口见[桥接文档](../../docs/storage-bridge-rtl.md)|
 |`backend`|controller队列、parent/child容量、提交宽度、响应保持、时钟缩放、功耗|时钟缩放仅用于自动生成的HBM4受控实验|
 |`simulation`|最大tick、确定性AXI背压、UCIe重放注错|重放开启时使用可重复的2%物理Flit错误|
 |`observability`|原生采样周期、HTML打开/服务、HTTP端口|最终快照始终输出，采样周期只影响时间序列粒度|

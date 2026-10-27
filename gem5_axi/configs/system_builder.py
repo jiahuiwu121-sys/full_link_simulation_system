@@ -1,5 +1,6 @@
 """Shared construction of the configured AXI/UCIe/Ramulator2 path."""
 from pathlib import Path
+import os
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -24,6 +25,7 @@ def create_axi(system, args, out, topology, *, base, size, period,
     link_count = len(topology['modules'])
     system.axi = AxiDemo(
         backend=getattr(args, 'backend', 'aou'), memory_backend=args.memory_backend,
+        storage_bridge_implementation=os.environ.get('SS_STORAGE_BRIDGE_IMPL', 'systemc'),
         base=base, size=size,
         period=period, ramulator_config='',
         ramulator_configs=runtime_configs(

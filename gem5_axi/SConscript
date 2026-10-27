@@ -28,6 +28,17 @@ Source('aou_axi2flit.cc', append=width_compile)
 Source('aou_flit_packer.cc', append=width_compile)
 Source('aou_flit_unpacker.cc', append=width_compile)
 Source('ramulator_backend.cc', append=width_compile)
+Source('storage_bridge.cc', append=width_compile)
+if ARGUMENTS.get('SS_STORAGE_BRIDGE_IMPL', 'systemc') == 'rtl':
+    rtl_planes = int(ARGUMENTS.get('SS_RESOURCE_PLANES', '1'))
+    if rtl_planes not in (1, 2, 3, 4):
+        raise ValueError('SS_RESOURCE_PLANES must be 1..4')
+    rtl_build = os.path.join(project_root, 'build',
+                             'storage_bridge-rtl-' + str(axi_width) + '-rp' + str(rtl_planes))
+    env.Append(CPPDEFINES=['SS_STORAGE_BRIDGE_RTL', 'VL_TIME_CONTEXT'])
+    env.Append(CPPPATH=[rtl_build, '/usr/share/verilator/include', '/usr/share/verilator/include/vltstd'])
+    Source('rtl_aou_target.cc', append=width_compile)
+    env.Append(LIBPATH=[rtl_build], LIBS=['Vstorage_bridge_top', 'verilated'])
 env.Append(CPPPATH=[project_root])
 ramulator_build = os.path.join(project_root, 'build', 'ramulator2', 'lib')
 env.Append(LIBPATH=[ramulator_build], LIBS=['storagestacked_ramulator2'], RPATH=[ramulator_build])

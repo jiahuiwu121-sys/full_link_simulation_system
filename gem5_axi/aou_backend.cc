@@ -1,12 +1,7 @@
 #include "aou_backend.hh"
 #include "axi2flit.h"
 #include "ucie_link.h"
-#include "aou_target.h"
-#include "simple_burst_memory.h"
-#include "ramulator_backend.hh"
-#ifdef SS_HAVE_MEMSIM
-#include "memsim_backend.hh"
-#endif
+#include "storage_bridge.hh"
 #include "sim/core.hh"
 #include "sim/cur_tick.hh"
 #include <fstream>
@@ -32,30 +27,15 @@ struct AouBackend::Fabric : sc_module {
     Stats stats;
     sc_fifo<FdiFlit> soc_tx, soc_rx;
     sc_fifo<FdiFlit> mem_tx, mem_rx;
-    sc_fifo<SimpleMemRequest> requests;
-    sc_fifo<SimpleMemResponse> responses;
     Axi2Flit bridge;
     UcieAouAdapter adapter;
     UcieLink link;
-    AouTarget target;
-    std::unique_ptr<SimpleBurstMemory> simple;
-    std::unique_ptr<RamulatorBackend> ramulator;
-#ifdef SS_HAVE_MEMSIM
-    std::unique_ptr<MemSimBackend> memory;
-#endif
+    std::unique_ptr<StorageBridge> storage;
     uint64_t memoryCompleted() const {
-        if (ramulator) return ramulator->completed;
-#ifdef SS_HAVE_MEMSIM
-        if (memory) return memory->completed;
-#endif
-        return simple->completed;
+        return storage->completed();
     }
     uint64_t memoryErrors() const {
-        if (ramulator) return ramulator->error_responses;
-#ifdef SS_HAVE_MEMSIM
-        if (memory) return memory->error_responses;
-#endif
-        return simple->error_responses;
+        return storage->errors();
     }
     struct Cursor { uint64_t addr; unsigned size, left; };
     std::deque<Cursor> writes;
@@ -86,11 +66,8 @@ struct AouBackend::Fabric : sc_module {
       : sc_module(n), owner(o), cfg(config(p.replay, lanes, rate, bits)), planes(p.planes),
         soc_tx("soc_tx", p.fdi_fifo_depth), soc_rx("soc_rx", p.fdi_fifo_depth),
         mem_tx("mem_tx", p.fdi_fifo_depth), mem_rx("mem_rx", p.fdi_fifo_depth),
-        requests("requests", p.memory_fifo_depth),
-        responses("responses", p.memory_fifo_depth),
         bridge("bridge", planes), adapter("adapter", cfg),
         link("link", cfg, &stats, sc_time(cfg.ui_fs(), SC_FS)),
-        target("target", cfg, planes),
         log(trace_dir + "/aou_events.csv") {
         g_aou_verbose = false;
         flit_log.open(trace_dir + "/ucie_flits.csv");
@@ -120,27 +97,10 @@ struct AouBackend::Fabric : sc_module {
         adapter.fifo_tx(soc_tx); adapter.fifo_rx(soc_rx);
         link.soc_tx_in(soc_tx); link.soc_rx_out(soc_rx);
         link.mem_rx_out(mem_rx); link.mem_tx_in(mem_tx); link.link_state(state);
-        target.clk(o.clk); target.rst_n(o.resetn);
-        target.link_rx(mem_rx); target.link_tx(mem_tx);
-        target.mem_req(requests); target.mem_rsp(responses);
-        if (p.memory_backend == "ramulator2") {
-            ramulator = std::make_unique<RamulatorBackend>("memory", p.base, p.size,
-                p.ramulator_slots, p.ramulator_children, p.ramulator_submit_width,
-                p.ramulator_response_hold,
-                ramulator_config, trace_dir);
-            ramulator->request(requests); ramulator->response(responses);
-#ifdef SS_HAVE_MEMSIM
-        } else if (p.memory_backend == "memsim") {
-            memory = std::make_unique<MemSimBackend>("memory", p.base, p.size,
-                p.memsim_slots, p.memsim_channels, p.memsim_scale,
-                p.memsim_queue, p.memsim_response_hold, trace_dir);
-            memory->request(requests); memory->response(responses);
-#endif
-        } else if (p.memory_backend == "simple") {
-            simple = std::make_unique<SimpleBurstMemory>("memory", p.base, p.size,
-                sc_time::from_value(p.period * p.latency), sc_time::from_value(p.period));
-            simple->request(requests); simple->response(responses);
-        } else throw std::invalid_argument("unknown memory backend");
+        storage = std::make_unique<StorageBridge>("storage_bridge", cfg, p,
+                                                   ramulator_config, trace_dir);
+        storage->clk(o.clk); storage->resetn(o.resetn);
+        storage->link_rx(mem_rx); storage->link_tx(mem_tx);
         SC_METHOD(comb);
 #define SENSITIVE(T, name) sensitive << o.axi.name;
         AXI_M2S(SENSITIVE)
@@ -236,14 +196,14 @@ struct AouBackend::Fabric : sc_module {
         ++metrics_cycles;
         const unsigned depths[] = {unsigned(soc_tx.num_available()), unsigned(soc_rx.num_available()),
             unsigned(mem_tx.num_available()), unsigned(mem_rx.num_available()),
-            unsigned(requests.num_available()), unsigned(responses.num_available())};
+            storage->requestAvailable(), storage->responseAvailable()};
         const unsigned capacities[] = {
             unsigned(soc_tx.num_available() + soc_tx.num_free()),
             unsigned(soc_rx.num_available() + soc_rx.num_free()),
             unsigned(mem_tx.num_available() + mem_tx.num_free()),
             unsigned(mem_rx.num_available() + mem_rx.num_free()),
-            unsigned(requests.num_available() + requests.num_free()),
-            unsigned(responses.num_available() + responses.num_free())};
+            storage->requestAvailable() + storage->requestFree(),
+            storage->responseAvailable() + storage->responseFree()};
         for (unsigned i = 0; i < 6; ++i) {
             auto& q = fifo_metrics[i]; q.sum += depths[i]; q.peak = std::max<uint64_t>(q.peak, depths[i]);
             q.full += depths[i] == capacities[i];
@@ -341,17 +301,16 @@ void AouBackend::finish(const std::string& dir) {
     auto& s=*fabric; s.log.flush(); s.flit_log.flush(); s.soc_log.flush(); s.mem_log.flush();
     sc_assert(s.writes.empty() && s.reads.empty());
     sc_assert(s.bridge.order_violations()==0);
-    if (s.ramulator) s.ramulator->finish();
-#ifdef SS_HAVE_MEMSIM
-    if (s.memory) s.memory->finish();
-#endif
+    s.storage->finish();
+    const auto target = s.storage->endpoint();
     std::ofstream f(dir+"/aou_summary.json");
     f << "{\"width\":" << DataBits << ",\"planes\":" << s.planes
+      << ",\"storage_bridge_implementation\":\"" << s.storage->implementation() << "\""
       << ",\"memory_completed\":" << s.memoryCompleted()
       << ",\"memory_errors\":" << s.memoryErrors()
-      << ",\"target_reads\":" << s.target.reads << ",\"target_writes\":" << s.target.writes
-      << ",\"target_read_beats\":" << s.target.read_beats
-      << ",\"target_write_beats\":" << s.target.write_beats
+      << ",\"target_reads\":" << target.reads << ",\"target_writes\":" << target.writes
+      << ",\"target_read_beats\":" << target.read_beats
+      << ",\"target_write_beats\":" << target.write_beats
       << ",\"tx_flits\":" << s.tx_count << ",\"rx_flits\":" << s.rx_count
       << ",\"forward_replays\":" << s.stats.forward.tx_replay_flits
       << ",\"reverse_replays\":" << s.stats.reverse.tx_replay_flits

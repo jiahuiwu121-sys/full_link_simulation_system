@@ -211,6 +211,7 @@ def compile_profile(profile: Path, output: Path):
         raise ValueError('profile configuration sections must be objects')
     planes = int(bridge.get('resource_planes', 1))
     slots = int(bridge.get('tlm_slots', 64))
+    bridge_implementation = bridge.get('implementation', 'systemc')
     queue = int(backend.get('queue', 64))
     parent_slots = int(backend.get('parent_slots', 64))
     child_slots = int(backend.get('child_slots', 512))
@@ -221,6 +222,8 @@ def compile_profile(profile: Path, output: Path):
     metrics_sample_cycles = _integer(observability, 'metrics_sample_cycles', 1000)
     if planes not in (1, 2, 3, 4):
         raise ValueError('bridge.resource_planes must be 1, 2, 3 or 4')
+    if bridge_implementation not in ('systemc', 'rtl'):
+        raise ValueError('bridge.implementation must be systemc or rtl')
     if min(slots, queue, parent_slots, child_slots, submit_width) < 1:
         raise ValueError('bridge/backend queue and slot values must be positive')
     if submit_width > child_slots:
@@ -378,6 +381,8 @@ def compile_profile(profile: Path, output: Path):
         'SS_PROTOCOL_PROFILE': protocol['profile'],
         'SS_AXI_ADDRESS_WIDTH': str(protocol['axi_address_width_bits']),
         'SS_AXI_ID_WIDTH': str(protocol['axi_id_width_bits']),
+        'SS_STORAGE_BRIDGE_IMPL': bridge_implementation,
+        'SS_RESOURCE_PLANES': str(planes),
     }
     run = {
         'SS_AXI_DATA_WIDTH': str(width), 'SS_AXI_PERIOD': f'{fabric_period_fs}fs',
@@ -386,6 +391,7 @@ def compile_profile(profile: Path, output: Path):
         'SS_PROCESS_ENV_JSON': str((output / 'process_environment.json').resolve()),
         'SS_FDI_FIFO_DEPTH': str(protocol['fdi_fifo_depth']),
         'SS_MEMORY_FIFO_DEPTH': str(protocol['memory_fifo_depth']),
+        'SS_STORAGE_BRIDGE_IMPL': bridge_implementation,
         'SS_RESOURCE_PLANES': str(planes),
         'SS_TLM_SLOTS': str(slots),
         'SS_RAMULATOR_QUEUE': str(queue),

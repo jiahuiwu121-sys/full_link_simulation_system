@@ -23,11 +23,14 @@ Ubuntu可先由管理员安装：
 ```bash
 sudo apt-get update
 sudo apt-get install -y build-essential git python3 curl ca-certificates \
-  tar gzip bzip2 unzip patch pkg-config autoconf automake libtool m4 flex bison perl rsync
+  tar gzip bzip2 unzip patch pkg-config autoconf automake libtool m4 flex bison perl rsync \
+  verilator
 ```
 
 编译器、Python、SCons、CMake、Bazel、交叉工具链由下面的锁定环境准备。
-无需物理GPU、商业仿真器或外部SystemC。仿真只使用gem5原生SystemC。
+无需物理GPU、商业仿真器或外部SystemC。`bridge.implementation=rtl` 使用
+Verilator生成普通C++模型，仿真仍只使用gem5原生SystemC；参考模型模式不调用
+Verilator。
 
 ## 2. 没有依赖包：从Git与上游下载
 
