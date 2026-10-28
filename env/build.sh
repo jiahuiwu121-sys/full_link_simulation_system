@@ -20,6 +20,14 @@ backend_args+=("SS_STORAGE_BRIDGE_IMPL=${SS_STORAGE_BRIDGE_IMPL:-systemc}")
 backend_args+=("SS_RESOURCE_PLANES=${SS_RESOURCE_PLANES:-1}")
 if [[ ${SS_STORAGE_BRIDGE_IMPL:-systemc} == rtl ]]; then
     bash "$SS_ROOT/env/build_storage_bridge_rtl.sh"
+    while IFS= read -r argument; do backend_args+=("$argument"); done < <(
+        "$AXI_PYTHON" - <<'PY_BRIDGE'
+import os,sys
+sys.path.insert(0,os.path.join(os.environ['SS_ROOT'],'env'))
+from storage_bridge_config import environment,from_environment
+for key,value in environment(from_environment()).items(): print(key+'='+value)
+PY_BRIDGE
+    )
 fi
 case "$SS_MEMORY_BACKEND" in
 ramulator2)
@@ -60,14 +68,19 @@ mkdir -p "$AXI_PROJECT_DIR/build"
     "${SS_RESOURCE_PLANES:-1}" \
     "${SS_FRONTEND_FAMILY:-classic}" "${SS_PROTOCOL_PROFILE:-aou-format6-256}" \
     "${SS_AXI_ADDRESS_WIDTH:-64}" "${SS_AXI_ID_WIDTH:-16}" <<'PY'
-import hashlib,json,sys
+import hashlib,json,os,sys
 from pathlib import Path
+sys.path.insert(0,os.path.join(os.environ['SS_ROOT'],'env'))
+from storage_bridge_config import environment,from_environment,source_hash
 path,backend,width,bridge_impl,planes,frontend,protocol,address_width,id_width=sys.argv[1:]
 inputs={'SS_MEMORY_BACKEND':backend,'SS_AXI_DATA_WIDTH':width,
         'SS_STORAGE_BRIDGE_IMPL':bridge_impl,
         'SS_RESOURCE_PLANES':planes,
         'SS_FRONTEND_FAMILY':frontend,'SS_PROTOCOL_PROFILE':protocol,
         'SS_AXI_ADDRESS_WIDTH':address_width,'SS_AXI_ID_WIDTH':id_width}
+if bridge_impl=='rtl':
+    inputs.update(environment(from_environment()))
+    inputs['SS_STORAGE_BRIDGE_SOURCE_SHA256']=source_hash()
 signature=hashlib.sha256(json.dumps(inputs,sort_keys=True).encode()).hexdigest()
 Path(path).write_text(json.dumps({'sha256':signature,'inputs':inputs},indent=2)+'\n')
 PY

@@ -22,7 +22,7 @@ import shutil
 
 SCHEMA = 'storagestacked.metrics.v1'
 COLLECTOR_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-MODULES = ('cpu', 'gpu', 'npu', 'gem5_interconnect', 'tlm', 'axi', 'axi_aggregator', 'axi2flit', 'ucie', 'aou_target',
+MODULES = ('cpu', 'gpu', 'npu', 'gem5_interconnect', 'tlm', 'axi', 'axi_aggregator', 'axi2flit', 'ucie', 'aou_target', 'storage_bridge',
            'ramulator_backend', 'backing', 'ramulator2', 'dram_power')
 
 
@@ -169,6 +169,7 @@ def collect(directory):
                 protocol=load(link_dir, 'protocol_summary.json', {}),
                 aou=load(link_dir, 'aou_summary.json', {}),
                 fabric=load(link_dir, 'fabric_metrics.json', {}),
+                storage_bridge=load(link_dir, 'storage_bridge_summary.json', {}),
                 backend=load(link_dir, 'ramulator_backend_summary.json', {}),
                 native=load(link_dir, 'ramulator_native_summary.json', {}),
                 power=load(link_dir, 'dram_power.json', {})))
@@ -190,6 +191,7 @@ def collect(directory):
     backend = load(d, 'ramulator_backend_summary.json', {})
     aou = load(d, 'aou_summary.json', {})
     fabric = load(d, 'fabric_metrics.json', {})
+    bridge_report = load(d, 'storage_bridge_summary.json', {})
     power = load(d, 'dram_power.json', {})
     gstats = gem5_stats(d)
     end = context.get('end_tick_fs') or protocol.get('simulation_end_tick_fs') or backend.get('simulation_end_tick_fs') or gstats.get('simTicks', 0)
@@ -317,6 +319,21 @@ def collect(directory):
                                     read_beats=aou.get('target_read_beats'), write_beats=aou.get('target_write_beats'),
                                     errors=aou.get('memory_errors'), completed=aou.get('memory_completed'),
                                     queues={k:queue_summary(v, fabric_cycles) for k,v in fabric.get('fifo_queues',{}).items() if k.startswith('target_')})
+    if bridge_report:
+        modules['storage_bridge'] = dict(schema=SCHEMA,module='storage_bridge',status='measured',
+            **{k:v for k,v in bridge_report.items() if k!='schema'})
+        bridge_counters=bridge_report.get('counters',{})
+        modules['storage_bridge']['message_payload_slot_fraction']=ratio(
+            bridge_counters.get('packed_granules',0),48*bridge_counters.get('tx_frames',0))
+        fabric['storage_bridge']=bridge_report
+        for stage,values in bridge_report.get('latency',{}).items():
+            samples=[int(x['latency_fs']) for x in rows(d,'storage_bridge_events.csv')
+                     if x['event']==('command' if stage=='request_frame_to_hif_command' else 'response_fdi_commit')]
+            latency_groups['storage_bridge.'+stage,'all','all'].extend(samples)
+    if topology_links and any(x['storage_bridge'] for x in topology_links):
+        modules['storage_bridge']=dict(schema=SCHEMA,module='storage_bridge',status='measured',
+            implementation='rtl',links=[dict(id=x['id'],report=x['storage_bridge']) for x in topology_links],
+            note='Latency windows and counters are preserved per independent bridge; cycle sums are concurrent module cycles.')
     # Raw FDI/frame observations; only TX_FRAME counts physical transmitted bytes.
     flits = rows(d, 'ucie_flits.csv')
     if flits:
@@ -828,7 +845,7 @@ def collect(directory):
     diagnostics, partitions, protocol_samples, bursts = analyze(
         txns, mappings, rows(d, 'axi_events.csv'), flits, commands, protocol, fabric,
         load(d, 'ramulator_model.json', {}), native, modules['ramulator_backend'], windows, end,
-        context.get('bandwidth_bin_ns', 100))
+        context.get('bandwidth_bin_ns', 100),bridge_events=rows(d,'storage_bridge_events.csv'))
     checks['axi_latency_correlation'] = not diagnostics['protocol_errors']
     checks['exclusive_latency_partition'] = all(sum(r[k] for k in diagnostics['critical_child_partition']['stages']) == r['total_fs'] for r in partitions)
     checks['resource_utilization_bounds'] = all(v['utilization'] is None or 0 <= v['utilization'] <= 1+1e-12 for w in diagnostics['windows'] for v in w['resources'].values())
@@ -893,7 +910,7 @@ def collect(directory):
     for link in topology_links:
         link_dir = d/link['result_dir']
         evidence.extend(link_dir/name for name in (*raw_names,'protocol_summary.json','aou_summary.json',
-            'fabric_metrics.json','ramulator_backend_summary.json','ramulator_native_summary.json',
+            'fabric_metrics.json','storage_bridge_summary.json','storage_bridge_events.csv','ramulator_backend_summary.json','ramulator_native_summary.json',
             'ramulator_model.json','ramulator_stats.yaml','dram_power.json','hbm4_external.yaml')
             if (link_dir/name).exists())
     evidence.extend(p for p in (d/'hettrace').glob('*') if p.is_file() and not p.is_symlink())

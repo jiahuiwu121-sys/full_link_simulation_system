@@ -30,6 +30,12 @@ class AxiDemo(SystemC_ScModule):
     memory_backend = Param.String('simple', 'simple, ramulator2 or optional memsim after UCIe')
     storage_bridge_implementation = Param.String(
         'systemc', 'systemc reference model or Verilated rtl protocol bridge')
+    storage_bridge_request_slots = Param.Unsigned(4, 'RTL descriptor slots per RP and direction')
+    storage_bridge_max_outstanding = Param.Unsigned(8, 'RTL transaction tags retained through FDI commit')
+    storage_bridge_wdata_granules = Param.Unsigned(64, 'RTL write-data receive credit window')
+    storage_bridge_frame_fifo_depth = Param.Unsigned(2, 'RTL RX/TX frame FIFO entries')
+    storage_bridge_tx_flush_cycles = Param.Unsigned(2, 'RTL partial-frame idle flush bound')
+    storage_bridge_trace = Param.Bool(False, 'Write RTL control/interface VCD using gem5 native time')
     ramulator_config = Param.String('', 'Fully expanded External Ramulator2 config')
     ramulator_configs = VectorParam.String([], 'One expanded Ramulator2 config per memory node')
     ramulator_slots = Param.Unsigned(8, 'Bounded in-flight AXI bursts')

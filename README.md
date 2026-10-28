@@ -41,6 +41,7 @@ bash env/run_profile_sweep.sh configs/system/llm8b-4axi512-ucie64-hbm3.json
 | gem5 | CPU、事件队列、原生SystemC/TLM及设备框架 |
 | coralnpu | NPU硬件、RTL仿真与在线AXI适配 |
 | protocol/include | 两端共享的AoU帧格式 |
+| storage_bridge | 存储侧 AoU/FDI 到 HIF 的 RTL、描述符/写数据缓存、事务跟踪及独立回归 |
 
 独立内存模拟器位于 [`ramulator2/`](ramulator2/README.md)，包含 HBM3/HBM3E、HBM4、LPDDR5、LPDDR6 及 DRAMPower 功耗模型，其构建和使用说明见该目录 README。全链路默认在线后端为 `ramulator2`；接入契约、配置和验收见[在线后端说明](docs/ramulator-integration.md)。
 
@@ -92,6 +93,13 @@ bash env/run_xpu.sh results/acceptance-xpu
 [开发说明](docs/development.md)，存储侧可综合桥接的信号与验证方法见
 [StorageBridge RTL](docs/storage-bridge-rtl.md)。Vortex外部版本在env/sources.lock.json，内部导入来源在
 [env/internal_imports.json](env/internal_imports.json)。
+
+存储侧 RTL 桥的可运行示例为
+[`configs/system/storage-bridge-rtl-hbm4.json`](configs/system/storage-bridge-rtl-hbm4.json)，
+使用 `bash env/run_system_profile.sh configs/system/storage-bridge-rtl-hbm4.json` 运行。
+桥内描述符/写缓存/事务表、跨帧响应和credit由RTL维护；
+`bash env/run_storage_bridge_validation.sh` 验证定向、CPU、大粒度压力与SystemC参考差分。
+独立报告新增 `storage_bridge_summary.json`、事件CSV与可选RTL VCD；当前不包含桥接PPA结论。
 
 历史 memsim 交接验收见[验收记录](docs/handoff-validation.md)：
 完整构建、19项原生测试、7组在线内存、4组GPU/NPU、旧链路/RAM兼容，以及新目录恢复构建和闭环验证通过。

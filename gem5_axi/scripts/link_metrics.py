@@ -138,7 +138,7 @@ def axi_latencies(events):
     return result, errors
 
 
-def analyze(txns, mappings, axi, flits, commands, protocol, fabric, models, native, backend, windows, end, bin_ns=100):
+def analyze(txns, mappings, axi, flits, commands, protocol, fabric, models, native, backend, windows, end, bin_ns=100, bridge_events=None):
     resources = []
     warnings = []
     profile = InflightProfile(txns)
@@ -163,6 +163,18 @@ def analyze(txns, mappings, axi, flits, commands, protocol, fabric, models, nati
         resource('TLM effective '+cmd, [(t['end_resp_tick'], t['enabled_bytes']) for t in txns if t['command']==cmd and t['status']==1],
                  method='no single peak: depends on workload, packet overhead and concurrent resources',
                  completion_accounted=True)
+    bridge=fabric.get('storage_bridge',{})
+    bridge_events=bridge_events or []
+    if bridge:
+        bridge_period=bridge.get('clock_period_fs',0)
+        bridge_lane=bridge.get('configuration',{}).get('axi_data_width',0)//8
+        for direction,event in (('W','hif_w'),('R','hif_r')):
+            resource('StorageBridge HIF '+direction,
+                [(int(r['tick_fs']),int(r['bytes'])) for r in bridge_events if r['event']==event],
+                peak=divide(bridge_lane,bridge_period*1e-15),
+                _measured_cycles=bridge.get('counters',{}).get('cycles'),
+                method='RTL HIF data width / bridge clock; structural upper bound, excludes protocol and queue limits',
+                occupancy_method='accepted HIF data beats / bridge clock opportunities')
     config = fabric.get('link_config', {})
     serial = config.get('serialize_ui', 0)*config.get('ui_fs', 0)
     for direction in ('FWD', 'REV'):
@@ -243,7 +255,16 @@ def analyze(txns, mappings, axi, flits, commands, protocol, fabric, models, nati
                     backend_headroom_over_link=divide(backend_peak,min(axi_peak,ucie_peak)) if axi_peak and ucie_peak else None,
                     dram_headroom_over_link=divide(dram_peak,min(axi_peak,ucie_peak)) if axi_peak and ucie_peak else None),
         policy='AXI and UCIe within 20%; backend and DRAM at least as fast as the slower ingress link')
-    if capacity_balance['status'] != 'balanced_ingress':
+    if bridge:
+        capacity_balance['storage_bridge']=dict(
+            configuration=bridge.get('configuration'),latency=bridge.get('latency'),
+            saturation_validated=False,
+            note='HIF structural width is known; workload-dependent parser/packing/window capacity needs a steady-state sweep.')
+        if capacity_balance['status']=='balanced_ingress':
+            capacity_balance['status']='bridge_service_unverified'
+    if capacity_balance['status'] == 'bridge_service_unverified':
+        warnings.append('Structural ingress capacities are balanced; RTL bridge sustained service capacity has not been established by this run')
+    elif capacity_balance['status'] != 'balanced_ingress':
         warnings.append('Ingress capacity is unbalanced or unresolved; use capacity_balance before interpreting saturation')
     first, last = protocol.get('first_measured_tick_fs'), protocol.get('last_measured_tick_fs')
     def opportunities(a, b):
@@ -267,6 +288,12 @@ def analyze(txns, mappings, axi, flits, commands, protocol, fabric, models, nati
             utilization = divide(right-left,cycles) if cycles is not None else None
             if a==0 and b==end:
                 utilization = divide(protocol.get('channels',{}).get(r['name'][-1],{}).get('handshakes',0),protocol.get('measured_cycles',0))
+            occupied = None
+        elif r['name'].startswith('StorageBridge HIF '):
+            # This is a synchronous beat interface, not a modeled busy-time
+            # interval resource. An empty interval list must not imply 0%.
+            cycles = r['_measured_cycles'] if a==0 and b==end else opportunities(a,b)
+            utilization = divide(right-left,cycles) if cycles is not None else None
             occupied = None
         elif r['name'] == 'Backend ingress' and r.get('_slot_period_fs') and r.get('_slot_width'):
             utilization = divide(right-left, (elapsed/r['_slot_period_fs'])*r['_slot_width'])
@@ -358,10 +385,22 @@ def analyze(txns, mappings, axi, flits, commands, protocol, fabric, models, nati
     bq=backend.get('queue_statistics',{})
     for reason,count in bq.get('stall_cycles',{}).items():
         stalls.append(dict(module='ramulator_backend',reason=reason,fraction=divide(count,bq.get('cycles',0)),cycles=count,period_fs=bq.get('period_fs',0)))
+    bridge_counters=bridge.get('counters',{})
+    for reason in ('credit_wait_cycles','cmd_stall_cycles','w_stall_cycles','tx_stall_cycles'):
+        if reason in bridge_counters:
+            count=bridge_counters[reason]
+            stalls.append(dict(module='storage_bridge',reason=reason,cycles=count,
+                fraction=divide(count,bridge_counters.get('cycles',0)),period_fs=bridge.get('clock_period_fs',0)))
+    for r in bridge_events:
+        if r['event'] in ('command','response_fdi_commit'):
+            protocol_samples.append(dict(stage='storage_bridge.'+r['event'],command='bridge',
+                axi_id=int(r['id']),tick_fs=int(r['tick_fs']),latency_fs=int(r['latency_fs'])))
     for rp in fabric.get('axi2flit',{}).get('resource_planes',[]):
         for kind,q in rp['queues'].items():
             if 'credit_blocked_cycles' in q:
                 stalls.append(dict(module='axi2flit',reason=f"rp{rp['rp']}/{kind}/credit",fraction=divide(q['credit_blocked_cycles'],fabric.get('cycles',0)),cycles=q['credit_blocked_cycles'],period_fs=period))
+    groups=defaultdict(list)
+    for r in protocol_samples: groups[r['stage']].append(r['latency_fs'])
     public=[{k:v for k,v in r.items() if not k.startswith('_')} for r in resources]
     result=dict(schema='storagestacked.link_diagnostics.v1',resources=public,windows=window_rows,timebins=timebins,
         binning=dict(requested_bin_ns=bin_ns,effective_bin_fs=width,maximum_bins=1000,method='complete event aggregation and interval clipping; no point thinning'),

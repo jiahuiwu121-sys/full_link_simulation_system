@@ -30,8 +30,9 @@ XPU构建，并在构建签名不匹配时自动重建。随后它调用traffic/
 连接图，`frontend_plan.json`是真实设备启动计划，`protocol_profile.json`是协议档案，
 `capacity_report.json`是理论容量检查，`run.env`是实际传给运行脚本的参数。
 
-配置是默认参数来源；调用命令时显式设置的同名`SS_*`环境变量优先，可用于短期缩短请求数或
-关闭浏览器。前端程序、参数、设备库和kernel始终由`execution`生成的启动计划决定，避免旧的
+配置是默认参数来源；运行时工作负载和可视化参数可用同名`SS_*`环境变量覆盖，用于短期缩短
+请求数或关闭浏览器。参与构建签名的位宽、RP 和 RTL 容量以用户文件为准，防止构建与运行
+值不一致。前端程序、参数、设备库和kernel始终由`execution`生成的启动计划决定，避免旧的
 设备环境变量把一次CPU实验意外切换成GPU/NPU实验。
 
 ## 配置分区
@@ -48,6 +49,7 @@ XPU构建，并在构建签名不匹配时自动重建。随后它调用traffic/
 |`memory_nodes[]`|HBM3/HBM3E/HBM4/LPDDR5/LPDDR6、controller数、自定义配置|controller数必须为正的2次幂|
 |`routing`|`single/address_interleave`及条带大小|多端口必须交织；条带为2的幂且覆盖完整请求|
 |`bridge`|Resource Plane、TLM在途槽、聚合器时钟比、`systemc/rtl`存储桥实现|RP为1..4；每条链路的AXI端口数必须等于时钟比；RTL接口见[桥接文档](../../docs/storage-bridge-rtl.md)|
+|`bridge.rtl`|每RP描述符槽、在途tag、写数据credit、帧FIFO、封帧等待、RTL波形|前五项为硬件构建参数；trace为运行时开关；仅选择rtl时启用|
 |`backend`|controller队列、parent/child容量、提交宽度、响应保持、时钟缩放、功耗|时钟缩放仅用于自动生成的HBM4受控实验|
 |`simulation`|最大tick、确定性AXI背压、UCIe重放注错|重放开启时使用可重复的2%物理Flit错误|
 |`observability`|原生采样周期、HTML打开/服务、HTTP端口|最终快照始终输出，采样周期只影响时间序列粒度|

@@ -33,8 +33,10 @@ if ARGUMENTS.get('SS_STORAGE_BRIDGE_IMPL', 'systemc') == 'rtl':
     rtl_planes = int(ARGUMENTS.get('SS_RESOURCE_PLANES', '1'))
     if rtl_planes not in (1, 2, 3, 4):
         raise ValueError('SS_RESOURCE_PLANES must be 1..4')
-    rtl_build = os.path.join(project_root, 'build',
-                             'storage_bridge-rtl-' + str(axi_width) + '-rp' + str(rtl_planes))
+    import sys
+    sys.path.insert(0, os.path.join(project_root, 'env'))
+    from storage_bridge_config import from_environment, build_directory
+    rtl_build = str(build_directory(axi_width, rtl_planes, from_environment(ARGUMENTS)))
     env.Append(CPPDEFINES=['SS_STORAGE_BRIDGE_RTL', 'VL_TIME_CONTEXT'])
     env.Append(CPPPATH=[rtl_build, '/usr/share/verilator/include', '/usr/share/verilator/include/vltstd'])
     Source('rtl_aou_target.cc', append=width_compile)

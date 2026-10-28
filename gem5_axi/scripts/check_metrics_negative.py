@@ -37,6 +37,18 @@ def negative(directory):
             'missing_bandwidth_bin':lambda d:diagnostic_edit(d,lambda v:v['timebins'].pop()),
             'wrong_partition_duration':lambda d:mutate_csv(d,'request_latency_partition.csv',lambda r:r[0].update(dram_data_service='0')),
         })
+    if (source/'storage_bridge_summary.json').exists():
+        def bridge_edit(d, edit):
+            p=d/'storage_bridge_summary.json';v=json.loads(p.read_text());edit(v);p.write_text(json.dumps(v))
+        tests.update({
+            'bridge_unfinished_business':lambda d:bridge_edit(d,lambda v:v.update(business_idle=False)),
+            'bridge_descriptor_overflow':lambda d:bridge_edit(d,lambda v:v['counters'].update(descriptor_peak=999999)),
+            'bridge_wrong_response_count':lambda d:bridge_edit(d,lambda v:v['latency']['backend_response_to_fdi_commit'].update(count=0)),
+            'bridge_missing_hif_event':lambda d:mutate_csv(d,'storage_bridge_events.csv',lambda r:r.remove(next(x for x in r if x['event'] in ('hif_r','hif_w')))),
+            'bridge_fabricated_latency':lambda d:mutate_csv(d,'storage_bridge_events.csv',lambda r:next(x for x in r if x['event']=='command').update(latency_fs='0')),
+        })
+        if 'wdata_peak' in json.loads((source/'storage_bridge_summary.json').read_text())['counters']:
+            tests['bridge_wdata_overflow']=lambda d:bridge_edit(d,lambda v:v['counters'].update(wdata_peak=999999))
     result={}
     for name,edit in tests.items():
         with tempfile.TemporaryDirectory(prefix='ss-metrics-negative-') as tmp:

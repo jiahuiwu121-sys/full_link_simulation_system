@@ -11,6 +11,7 @@ import os
 import shlex
 from pathlib import Path
 
+from storage_bridge_config import validate as validate_bridge, environment as bridge_environment, source_hash as bridge_source_hash
 from protocol_profiles import resolve as resolve_protocol
 from topology_config import load
 
@@ -212,6 +213,7 @@ def compile_profile(profile: Path, output: Path):
     planes = int(bridge.get('resource_planes', 1))
     slots = int(bridge.get('tlm_slots', 64))
     bridge_implementation = bridge.get('implementation', 'systemc')
+    rtl_parameters = validate_bridge(bridge.get('rtl', {}))
     queue = int(backend.get('queue', 64))
     parent_slots = int(backend.get('parent_slots', 64))
     child_slots = int(backend.get('child_slots', 512))
@@ -384,6 +386,9 @@ def compile_profile(profile: Path, output: Path):
         'SS_STORAGE_BRIDGE_IMPL': bridge_implementation,
         'SS_RESOURCE_PLANES': str(planes),
     }
+    if bridge_implementation == 'rtl':
+        build.update(bridge_environment(rtl_parameters))
+        build['SS_STORAGE_BRIDGE_SOURCE_SHA256'] = bridge_source_hash()
     run = {
         'SS_AXI_DATA_WIDTH': str(width), 'SS_AXI_PERIOD': f'{fabric_period_fs}fs',
         'SS_EXECUTION_MODE': frontend['mode'],
@@ -392,6 +397,7 @@ def compile_profile(profile: Path, output: Path):
         'SS_FDI_FIFO_DEPTH': str(protocol['fdi_fifo_depth']),
         'SS_MEMORY_FIFO_DEPTH': str(protocol['memory_fifo_depth']),
         'SS_STORAGE_BRIDGE_IMPL': bridge_implementation,
+        'SS_STORAGE_BRIDGE_TRACE': '1' if rtl_parameters['trace'] else '0',
         'SS_RESOURCE_PLANES': str(planes),
         'SS_TLM_SLOTS': str(slots),
         'SS_RAMULATOR_QUEUE': str(queue),

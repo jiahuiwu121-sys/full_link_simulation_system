@@ -463,6 +463,40 @@
             "systemc",
             "rtl"
           ]
+        },
+        "rtl": {
+          "type": "object",
+          "properties": {
+            "request_slots": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16
+            },
+            "max_outstanding": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            },
+            "wdata_granules": {
+              "type": "integer",
+              "minimum": 30,
+              "maximum": 4096
+            },
+            "frame_fifo_depth": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16
+            },
+            "tx_flush_cycles": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            },
+            "trace": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

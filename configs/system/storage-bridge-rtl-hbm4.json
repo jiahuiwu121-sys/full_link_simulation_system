@@ -1,0 +1,35 @@
+{
+  "schema": "storagestacked.system.v2",
+  "name": "storage-bridge-rtl-hbm4",
+  "sources": [{"name": "bridge_traffic", "type": "traffic"}],
+  "execution": {"mode": "traffic"},
+  "workload": {
+    "traffic": {
+      "request_size_bytes": 1024,
+      "working_set_bytes": 1048576,
+      "max_inflight": 64,
+      "write_percent": 50,
+      "warmup_requests": 16,
+      "measure_requests": 256,
+      "cooldown_requests": 16,
+      "load_percent": 100
+    }
+  },
+  "axi": {"data_width_bits": 256, "clock_period": "666667fs"},
+  "axi_ports": [{"name": "axi0", "link": "ucie0", "sources": ["bridge_traffic"]}],
+  "ucie_links": [{
+    "name": "ucie0", "lanes": 16, "rate_gtps": 24.0,
+    "modulation": "NRZ", "memory_node": "hbm4_0"
+  }],
+  "memory_nodes": [{"name": "hbm4_0", "standard": "HBM4", "channels": 2}],
+  "routing": {"policy": "single", "stripe_bytes": 4096},
+  "bridge": {
+    "resource_planes": 1, "tlm_slots": 64, "fabric_clock_ratio": 1,
+    "implementation": "rtl",
+    "rtl": {
+      "request_slots": 4, "max_outstanding": 8, "wdata_granules": 64,
+      "frame_fifo_depth": 2, "tx_flush_cycles": 2, "trace": true
+    }
+  },
+  "backend": {"queue": 32, "parent_slots": 16, "child_slots": 128, "submit_width": 8}
+}

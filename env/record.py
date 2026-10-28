@@ -39,7 +39,7 @@ if "not found" in linked or "libsystemc" in linked.lower():
     raise SystemExit("Unexpected/missing runtime library:\n" + linked)
 sources = {}
 backend = os.environ.get('SS_MEMORY_BACKEND', 'ramulator2')
-source_names = ["gem5", "gem5_new", "gem5_axi", "axi2flit", "ucie-model", "protocol", "ramulator2"]
+source_names = ["gem5", "gem5_new", "gem5_axi", "axi2flit", "ucie-model", "protocol", "ramulator2", "storage_bridge"]
 if backend == 'memsim': source_names.append('mem_sim')
 if os.environ.get('SS_RUN_XPU') == '1': source_names += ['coralnpu','vortex-gpu/vortex']
 for name in source_names:
@@ -74,10 +74,15 @@ manifest = {
 if manifest['storage_bridge_implementation'] == 'rtl':
     width = os.environ.get('SS_AXI_DATA_WIDTH', '256')
     planes = os.environ.get('SS_RESOURCE_PLANES', '1')
-    rtl_directory = root / f'build/storage_bridge-rtl-{width}-rp{planes}'
+    sys.path.insert(0,str(root/'env'))
+    from storage_bridge_config import from_environment,build_directory,source_hash
+    rtl_directory = build_directory(width,planes,from_environment())
     rtl_library = rtl_directory / 'libVstorage_bridge_top.a'
     if not rtl_library.is_file():
         raise SystemExit('Missing configured StorageBridge RTL model: ' + str(rtl_library))
+    model_manifest=json.loads((rtl_directory/'model_manifest.json').read_text())
+    if model_manifest['source_sha256']!=source_hash() or model_manifest['library_sha256']!=sha(rtl_library):
+        raise SystemExit('StorageBridge RTL model/source mismatch; rebuild before running')
     rtl_symbols = command('nm', '-a', '-C', str(rtl_library))
     if any(token in rtl_symbols for token in ('sc_core::', 'sc_dt::', 'sc_main')):
         raise SystemExit('StorageBridge RTL model contains a second SystemC implementation')
@@ -87,6 +92,7 @@ if manifest['storage_bridge_implementation'] == 'rtl':
         'model_library': str(rtl_library),
         'model_library_sha256': sha(rtl_library),
         'embedded_systemc_symbols': 0,
+        'model_manifest': model_manifest,
     }
 native_library = root / 'build/ramulator2/lib/libstoragestacked_ramulator2.so'
 native_linked = command('ldd', str(native_library))

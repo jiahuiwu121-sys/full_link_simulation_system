@@ -27,6 +27,14 @@ with tempfile.TemporaryDirectory() as directory:
     assert (output / 'build.env').is_file()
     assert (output / 'validation_plan.json').is_file()
 
+    example=ROOT/'configs/system/storage-bridge-rtl-hbm4.json'
+    example_out=Path(directory)/'bridge-example'
+    compile_profile(example,example_out)
+    example_run=json.loads((example_out/'run_parameters.json').read_text())
+    assert example_run['SS_STORAGE_BRIDGE_IMPL']=='rtl'
+    assert example_run['SS_TRAFFIC_MEASURE']=='256'
+    assert example_run['SS_TRAFFIC_SIZE']=='1024'
+
     invalid = json.loads(source.read_text())
     invalid['bridge']['resource_planes'] = 5
     bad = Path(directory) / 'bad.json'
@@ -155,5 +163,32 @@ with tempfile.TemporaryDirectory() as directory:
         assert 'aou_payload_bytes=250' in str(error)
     else:
         raise AssertionError('incompatible AoU payload size was accepted')
+
+    # Hardware capacities must participate in the build signature, while VCD
+    # selection must remain a runtime option. Invalid capacities fail early.
+    rtl_profile = json.loads(user_source.read_text())
+    rtl_profile['bridge']['implementation'] = 'rtl'
+    rtl_profile['bridge']['rtl'].update(request_slots=7,max_outstanding=13,trace=True)
+    rtl_path = Path(directory) / 'rtl.json'
+    rtl_path.write_text(json.dumps(rtl_profile))
+    rtl_out = Path(directory) / 'rtl-output'
+    compile_profile(rtl_path, rtl_out)
+    build_parameters = json.loads((rtl_out/'build_parameters.json').read_text())
+    assert build_parameters['SS_BRIDGE_REQUEST_SLOTS']=='7'
+    assert build_parameters['SS_BRIDGE_MAX_OUTSTANDING']=='13'
+    assert len(build_parameters['SS_STORAGE_BRIDGE_SOURCE_SHA256'])==64
+    assert 'SS_STORAGE_BRIDGE_TRACE' not in build_parameters
+    assert 'export SS_STORAGE_BRIDGE_TRACE=1\n' in (rtl_out/'run.env').read_text()
+    for key,value in [('request_slots',0),('max_outstanding',65),('wdata_granules',29),
+                      ('frame_fifo_depth',0),('tx_flush_cycles',0),('trace',1)]:
+        invalid = json.loads(json.dumps(rtl_profile))
+        invalid['bridge']['rtl'][key]=value
+        rtl_path.write_text(json.dumps(invalid))
+        try:
+            compile_profile(rtl_path,Path(directory)/('bad-rtl-'+key))
+        except ValueError as error:
+            assert key in str(error)
+        else:
+            raise AssertionError('invalid RTL parameter was accepted: '+key)
 
 print('system profile compiler: PASS')

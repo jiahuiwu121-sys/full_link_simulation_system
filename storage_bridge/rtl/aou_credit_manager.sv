@@ -14,6 +14,10 @@ module aou_credit_manager #(
   input logic [1:0] return_rp,
   input logic [2:0] return_kind,
   input logic [7:0] return_granules,
+  input logic release_valid,
+  input logic [1:0] release_rp,
+  input logic [2:0] release_kind,
+  input logic [7:0] release_granules,
   input logic query_write,
   input logic [1:0] query_rp,
   input logic [7:0] query_granules,
@@ -28,8 +32,8 @@ module aou_credit_manager #(
   output logic protocol_error
 );
   import storage_bridge_pkg::*;
-  integer tx_credit [0:3][0:4];
-  integer pending [0:3][0:4];
+  logic [15:0] tx_credit [0:3][0:4];
+  logic [15:0] pending [0:3][0:4];
   logic [1:0] grant_rp;
   logic [2:0] grant_code [0:4];
   integer next_rp;
@@ -107,6 +111,9 @@ module aou_credit_manager #(
       if (return_valid &&
           (return_rp >= RESOURCE_PLANES || return_kind > CREDIT_WDATA))
         protocol_error <= 1'b1;
+      if (release_valid &&
+          (release_rp >= RESOURCE_PLANES || release_kind > CREDIT_RREQ))
+        protocol_error <= 1'b1;
 
       // Calculate one assignment per counter so simultaneous header/Misc
       // grants, response consumption, credit return and header emission add up.
@@ -123,17 +130,22 @@ module aou_credit_manager #(
               consume_rp < RESOURCE_PLANES && consume_kind <= CREDIT_WRESP &&
               tx_credit[r][k] >= consume_granules)
             tx_next = tx_next - consume_granules;
-          tx_credit[r][k] <= tx_next > 4095 ? 4095 : tx_next;
+          if (tx_next > 65535 || tx_next < 0) protocol_error <= 1'b1;
+          tx_credit[r][k] <= 16'(tx_next);
 
           pending_next = pending[r][k];
           if (return_valid && return_rp == r && return_kind == k &&
               return_rp < RESOURCE_PLANES && return_kind <= CREDIT_WDATA) begin
             pending_next = pending_next + return_granules;
-            if (pending_next > capacity(r, k)) pending_next = capacity(r, k);
           end
+          if (release_valid && release_rp == r && release_kind == k &&
+              release_rp < RESOURCE_PLANES && release_kind <= CREDIT_RREQ)
+            pending_next = pending_next + release_granules;
           if (grant_valid && grant_take && grant_rp == r)
             pending_next = pending_next - decode_credit(grant_code[k]);
-          pending[r][k] <= pending_next;
+          if (pending_next < 0 || pending_next > capacity(r,k))
+            protocol_error <= 1'b1;
+          pending[r][k] <= 16'(pending_next);
         end
       end
       if (grant_valid && grant_take)

@@ -2,6 +2,7 @@ storage_bridge_pkg.sv
 aou_fdi_rx.sv
 aou_request_decoder.sv
 aou_credit_manager.sv
+aou_transaction_manager.sv
 aou_response_encoder.sv
 aou_fdi_tx.sv
 storage_bridge_top.sv

@@ -26,6 +26,12 @@ def create_axi(system, args, out, topology, *, base, size, period,
     system.axi = AxiDemo(
         backend=getattr(args, 'backend', 'aou'), memory_backend=args.memory_backend,
         storage_bridge_implementation=os.environ.get('SS_STORAGE_BRIDGE_IMPL', 'systemc'),
+        storage_bridge_request_slots=int(os.environ.get('SS_BRIDGE_REQUEST_SLOTS', '4')),
+        storage_bridge_max_outstanding=int(os.environ.get('SS_BRIDGE_MAX_OUTSTANDING', '8')),
+        storage_bridge_wdata_granules=int(os.environ.get('SS_BRIDGE_WDATA_GRANULES', '64')),
+        storage_bridge_frame_fifo_depth=int(os.environ.get('SS_BRIDGE_FRAME_FIFO_DEPTH', '2')),
+        storage_bridge_tx_flush_cycles=int(os.environ.get('SS_BRIDGE_TX_FLUSH_CYCLES', '2')),
+        storage_bridge_trace=os.environ.get('SS_STORAGE_BRIDGE_TRACE', '0') == '1',
         base=base, size=size,
         period=period, ramulator_config='',
         ramulator_configs=runtime_configs(

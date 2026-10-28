@@ -20,7 +20,7 @@ StorageBridge::StorageBridge(sc_core::sc_module_name name, const Config& cfg,
         target->mem_req(requests); target->mem_rsp(responses);
 #ifdef SS_STORAGE_BRIDGE_RTL
     } else if (implementation_ == "rtl") {
-        rtl_target = std::make_unique<RtlAouTarget>("rtl_target", p.planes);
+        rtl_target = std::make_unique<RtlAouTarget>("rtl_target", p, trace_dir);
         rtl_target->clk(clk); rtl_target->rst_n(resetn);
         rtl_target->link_rx(link_rx); rtl_target->link_tx(link_tx);
         rtl_target->mem_req(requests); rtl_target->mem_rsp(responses);
@@ -106,6 +106,9 @@ uint64_t StorageBridge::errors() const
 
 void StorageBridge::finish()
 {
+#ifdef SS_STORAGE_BRIDGE_RTL
+    if (rtl_target) rtl_target->finish();
+#endif
     sc_assert(idle());
     if (ramulator)
         ramulator->finish();

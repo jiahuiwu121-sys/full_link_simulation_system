@@ -80,5 +80,24 @@ class MetricsContract(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'SS_METRICS_BIN_NS'):
                 collect(d)
 
+    def test_hif_beat_utilization_is_not_an_empty_busy_interval(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d=Path(tmp);self.fixture(d)
+            (d/'storage_bridge_summary.json').write_text(json.dumps(dict(
+                schema='storagestacked.storage-bridge.v2',implementation='rtl',
+                clock_period_fs=2,configuration=dict(axi_data_width=256),
+                counters=dict(cycles=50))))
+            write_csv(d,'storage_bridge_events.csv',[
+                dict(tick_fs=10,event='hif_w',rp=0,id=1,beat=0,latency_fs=0,bytes=32),
+                dict(tick_fs=40,event='hif_r',rp=0,id=2,beat=0,latency_fs=0,bytes=32)])
+            collect(d)
+            diagnostic=json.loads((d/'link_diagnostics.json').read_text())
+            full=diagnostic['windows'][0]['resources']
+            for direction in ('R','W'):
+                v=full['StorageBridge HIF '+direction]
+                self.assertEqual(v['bytes'],32)
+                self.assertEqual(v['utilization'],1/50)
+                self.assertIsNone(v['occupied_time_fs'])
+
 
 if __name__=='__main__':unittest.main()

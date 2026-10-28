@@ -16,7 +16,7 @@ function diagnosticPage(d){
  const x=d.diagnostics;
  if(!x){element('p','此结果尚未生成带宽/延迟诊断，重新运行或重新收集统计后可查看。',content).className='hint';return;}
  if(x.capacity_balance){const balance=section('模型容量平衡');
-  cards([['判定',x.capacity_balance.status==='balanced_ingress'?'入口容量已平衡':'容量不平衡或信息不足'],['结构瓶颈',x.capacity_balance.bottleneck],...Object.entries(x.capacity_balance.capacities_Bps).map(([name,value])=>[name+' / GB/s',value==null?null:value/1e9])],balance);
+  cards([['判定',x.capacity_balance.status==='balanced_ingress'?'入口容量已平衡':x.capacity_balance.status==='bridge_service_unverified'?'Bridge服务能力待稳态验证':'容量不平衡或信息不足'],['结构瓶颈',x.capacity_balance.bottleneck],...Object.entries(x.capacity_balance.capacities_Bps).map(([name,value])=>[name+' / GB/s',value==null?null:value/1e9])],balance);
   table(balance,['比例','值'],Object.entries(x.capacity_balance.ratios).map(([name,value])=>[name,value]));
   element('p','AXI与UCIe默认入口容量应在20%以内匹配；后端提交和DRAM数据总线应留有余量。这里展示模型上限，用于发现配置造成的假瓶颈，不代表工作负载已经达到该吞吐。',balance).className='hint';
  }
@@ -85,6 +85,14 @@ const stage=section('按阶段、来源、读写查看延迟');table(stage,['阶
 const sources=section('各来源请求与流量');table(sources,['来源','请求','有效字节/B'],Object.entries(o.sources).map(([name,v])=>[name,v.requests,v.successful_enabled_bytes]));
 const commands=section('实际DRAM命令分布');bars(commands,Object.entries(d.commands),'次');
 const windows=section('任务与设备窗口');table(windows,['窗口','时间/μs','完成请求','有效吞吐/GB/s','请求P95/ns','DRAM能量/μJ','平均功率/W','边界方法'],o.window_statistics.map(w=>{const traffic=w.measurement_cohort_traffic||w.completed_target_traffic,bw=w.measurement_cohort_effective_bandwidth_Bps??w.completion_accounted_effective_bandwidth_Bps;return[w.name,w.duration_seconds*1e6,traffic.requests,bw==null?null:bw/1e9,traffic.latency.p95_fs==null?null:traffic.latency.p95_fs/1e6,w.dram_energy_j==null?null:w.dram_energy_j*1e6,w.dram_average_power_w,w.power_boundary_method];}));
+const bridgeModule=d.modules?.storage_bridge;
+if(bridgeModule?.status==='measured'){
+ const bridgeSection=section('StorageBridge协议桥');
+ const report=await get(bridgeModule.report);
+ const bridges=report.links||[{id:0,report}];
+ table(bridgeSection,['模块','实现','描述符槽/RP/方向','在途上限','WDATA队列峰值/beat','RX消息','TX帧','跨帧消息','credit等待周期','请求桥接P95/ns','响应桥接P95/ns'],bridges.map(x=>{const b=x.report,c=b.configuration||{},n=b.counters||{},l=b.latency||{};return[x.id,b.implementation,c.request_slots_per_rp_direction,c.max_outstanding,n.wdata_peak,n.rx_messages,n.tx_frames,n.spanning_messages,n.credit_wait_cycles,l.request_frame_to_hif_command?.p95_fs==null?null:l.request_frame_to_hif_command.p95_fs/1e6,l.backend_response_to_fdi_commit?.p95_fs==null?null:l.backend_response_to_fdi_commit.p95_fs/1e6];}));
+ element('p','请求窗口：输入消息首帧进入RTL至HIF命令被接受，含解析、组装和排队；响应窗口：后端响应就绪至最后片段进入FDI FIFO。两者均不包含DRAM服务时间，窗口不能与其他重叠统计直接相加。桥接功耗尚需目标库与活动信息。',bridgeSection).className='hint';
+}
 const modules=section('独立模块报告'),choose=element('select',null,modules),details=element('pre',null,modules);for(const[name,v]of Object.entries(d.modules)){const option=element('option',name+' / '+v.status,choose);option.value=name;}let sequence=0;async function show(){const n=++sequence;try{const v=await get(d.modules[choose.value].report);if(n===sequence)details.textContent=JSON.stringify(v,null,2);}catch(e){details.textContent=e.message;}}choose.onchange=show;await show();}
 function sweepPage(sweep){const s=section('带宽—延迟压力扫描');const rows=sweep.rows;
  lines(s,{'供给载荷':rows.map(r=>[r.load_percent,r.offered_payload_Bps/1e9]),'实测载荷':rows.map(r=>[r.load_percent,r.achieved_payload_Bps/1e9])},'供给负载 / %','吞吐 / GB/s');

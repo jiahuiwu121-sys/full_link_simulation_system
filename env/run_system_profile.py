@@ -70,7 +70,10 @@ def main():
     if not header.is_file():
         raise ValueError('protocol profile header is missing: ' + str(header))
 
-    preserved = {key: os.environ[key] for key in run_parameters if key in os.environ}
+    # A model parameter must have one value in build, run and signature.
+    # Environment overrides remain available for workload/observability inputs.
+    preserved = {key: os.environ[key] for key in run_parameters
+                 if key in os.environ and key not in build_parameters}
     environment = os.environ.copy()
     environment.update(build_parameters)
     environment.update(run_parameters)

@@ -21,6 +21,68 @@ def near(a, b):
     assert math.isclose(a,b,rel_tol=1e-9,abs_tol=1e-18), (a,b)
 
 
+def check_storage_bridge(directory):
+    """Reconcile hardware observations with independent AXI/backend evidence."""
+    d=Path(directory)
+    if not (d/'storage_bridge_summary.json').exists():
+        assert read(d,'aou_summary.json').get('storage_bridge_implementation')!='rtl', 'missing RTL evidence'
+        return None
+    bridge=read(d,'storage_bridge_summary.json')
+    assert bridge['schema']=='storagestacked.storage-bridge.v2' and bridge['implementation']=='rtl'
+    assert bridge['business_idle'] is True
+    c=bridge['counters'];cfg=bridge['configuration'];period=bridge['clock_period_fs']
+    assert c['protocol_error']==0 and period>0 and c['cycles']>0
+    assert 0<=c['descriptor_peak']<=2*cfg['resource_planes']*cfg['request_slots_per_rp_direction']
+    assert 0<=c['outstanding_peak']<=cfg['max_outstanding']
+    for key in ('descriptor','outstanding'):
+        assert 0<=c[key+'_depth_sum']<=c[key+'_peak']*c['cycles']
+    if 'wdata_peak' in c:
+        minimum_granules={256:7,512:14,1024:27}[cfg['axi_data_width']]
+        assert 0<=c['wdata_peak']<=cfg['resource_planes']*(cfg['wdata_granules']//minimum_granules)
+        assert 0<=c['wdata_depth_sum']<=c['wdata_peak']*c['cycles']
+    for key in ('rx','tx'):
+        assert 0<=c[key+'_queue_peak']<=cfg['frame_fifo_depth']
+    for key in ('credit_wait_cycles','cmd_stall_cycles','w_stall_cycles','tx_stall_cycles'):
+        assert 0<=c[key]<=c['cycles']
+    assert 0<=c['credit_only_frames']<=c['tx_frames']
+    aou=read(d,'aou_summary.json');protocol=read(d,'protocol_summary.json')
+    assert cfg['axi_data_width']==aou['width']==protocol['axi_data_bits']
+    assert cfg['resource_planes']==aou['planes'] and period==protocol['period_ticks']
+    events=rows(d,'storage_bridge_events.csv');counts=Counter(r['event'] for r in events)
+    assert all(0<=int(r['rp'])<cfg['resource_planes'] and int(r['tick_fs'])>=0 for r in events)
+    assert all(int(a['tick_fs'])<=int(b['tick_fs']) for a,b in zip(events,events[1:]))
+    assert counts['command']==aou['target_reads']+aou['target_writes']==aou['memory_completed']
+    assert counts['response_fdi_commit']==counts['command']
+    for ch,event,key in (('W','hif_w','target_write_beats'),('R','hif_r','target_read_beats')):
+        assert counts[event]==aou[key]==protocol['channels'][ch]['handshakes']
+        assert all(int(r['bytes'])==cfg['axi_data_width']//8 for r in events if r['event']==event)
+    for event,key in (('fdi_rx','rx_frames'),('fdi_tx','tx_frames')):
+        assert counts[event]==c[key]
+    for name,event in (('request_frame_to_hif_command','command'),('backend_response_to_fdi_commit','response_fdi_commit')):
+        values=sorted(int(r['latency_fs']) for r in events if r['event']==event)
+        summary=bridge['latency'][name]
+        assert summary['count']==len(values)==counts['command']
+        if values:
+            assert values[0]>=0 and summary['max_fs']==values[-1]
+            near(summary['mean_fs'],sum(values)/len(values))
+            for q in (50,95,99):assert summary[f'p{q}_fs']==values[math.ceil(q/100*len(values))-1]
+    backend=read(d,'ramulator_backend_summary.json')
+    assert backend['bursts']==counts['command'] and backend['drained']
+    # Directed tests intentionally exercise DECERR. A valid error response is
+    # distinct from an RTL framing/credit/tag protocol error.
+    assert backend['errors']==aou['memory_errors']
+    if (d/'link_diagnostics.json').exists():
+        diagnostic=read(d,'link_diagnostics.json')
+        full=next(w for w in diagnostic['windows'] if w['name']=='full_run')
+        for ch,event in (('W','hif_w'),('R','hif_r')):
+            name='StorageBridge HIF '+ch
+            resource=next(r for r in diagnostic['resources'] if r['name']==name)
+            near(resource['peak_Bps'],cfg['axi_data_width']/8/(period*1e-15))
+            assert full['resources'][name]['bytes']==sum(int(r['bytes']) for r in events if r['event']==event)
+            near(full['resources'][name]['utilization'],counts[event]/c['cycles'])
+    return dict(commands=counts['command'],response_commits=counts['response_fdi_commit'],business_idle=True)
+
+
 def check(directory):
     d=Path(directory)
     report=read(d,'metrics.json'); overall=report['overall']; modules=report['modules']
@@ -165,7 +227,10 @@ def check(directory):
             near(ingress['peak_Bps'],backend_capacity['submit_width']*native_capacity['transaction_bytes']/(native_capacity['period_fs']*1e-15))
             balance=diagnostic['capacity_balance'];caps=balance['capacities_Bps']
             near(caps['axi_per_direction'],protocol['axi_data_bits']/8/(protocol['period_ticks']*1e-15))
-            assert balance['status'] in ('balanced_ingress','unbalanced_or_unknown')
+            assert balance['status'] in ('balanced_ingress','unbalanced_or_unknown','bridge_service_unverified')
+            if balance['status']=='bridge_service_unverified':
+                assert (d/'storage_bridge_summary.json').exists()
+                assert balance['storage_bridge']['saturation_validated'] is False
     if (d/'ramulator_native_summary.json').exists():
         native=read(d,'ramulator_native_summary.json'); backend=read(d,'ramulator_backend_summary.json')
         native_stats=read(d,'ramulator_stats.json')
@@ -238,10 +303,21 @@ def check(directory):
             assert modules['dram_power']['status']=='disabled'
             assert all(r['total_energy_j']=='' for r in intervals)
         assert overall['system_total_energy_j'] is None
+    bridge_checks=[]
+    if (d/'topology_summary.json').exists() and read(d,'topology_summary.json').get('modules',1)>1:
+        for link in read(d,'topology_summary.json')['links']:
+            checked=check_storage_bridge(d/link['result_dir'])
+            if checked:bridge_checks.append(dict(module=link['id'],**checked))
+    elif (d/'aou_summary.json').exists():
+        checked=check_storage_bridge(d)
+        if checked:bridge_checks.append(checked)
     result=dict(passed=True,transactions=len(tx),effective_bytes=effective,module_files=len(modules),
                 checks=['stable uid/source mapping','native statistics preserved','latency histogram sample conservation',
                         'child causality','queue integrals','stall reason counts','power interval conservation','disabled power semantics',
                         'bandwidth bin conservation','resolved interface capacities','AXI four-state conservation','exclusive request latency partition'])
+    if bridge_checks:
+        result['storage_bridge']=bridge_checks
+        result['checks'].append('RTL descriptor/tag bounds, HIF/AXI beat and latency event conservation')
     (d/'metrics_check.json').write_text(json.dumps(result,indent=2)+'\n')
     return result
 

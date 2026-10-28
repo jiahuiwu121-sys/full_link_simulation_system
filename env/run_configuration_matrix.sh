@@ -29,8 +29,11 @@ declare -A topology=(
     [4]="$SS_ROOT/configs/topology/quad-ucie-hbm4.json"
     [8]="$SS_ROOT/configs/topology/octal-ucie-hbm4.json"
 )
-for modules in 1 2 4 8; do
-    for planes in 1 2 4; do
+for planes in 1 2 4; do
+    if [[ ${SS_STORAGE_BRIDGE_IMPL:-systemc} == rtl ]]; then
+        SS_RESOURCE_PLANES="$planes" bash "$SS_ROOT/env/build.sh" > "$root/build-rp${planes}.log" 2>&1
+    fi
+    for modules in 1 2 4 8; do
         name="modules-$modules-rp-$planes"
         echo "运行 $name"
         SS_RESOURCE_PLANES="$planes" \
