@@ -1,0 +1,22 @@
+{
+  "schema": "ucie-mc-bridge.contract.v1",
+  "status": "provisional_test_contract",
+  "real_mc_compatibility_confirmed": false,
+  "data_bits": 256,
+  "address_bits": 40,
+  "address_unit": "byte",
+  "token_bits": 53,
+  "pointer_bits": 19,
+  "command_codes": {"write": 0, "read": 1, "rmw": 2},
+  "length_codes": {"one_32byte_word": 0, "two_32byte_words": 1},
+  "priority_codes": {"lpr": 0, "hpr": 2},
+  "mask_one_means_write": true,
+  "initial_credits": {"lpr": 24, "hpr": 8, "wr": 32},
+  "write_ack_test_policy": "posted_accept",
+  "production_default": "writes_rejected_until_posted_contract_enabled",
+  "command_latency_test_value": 0,
+  "auto_precharge": false,
+  "criticality_escalation": false,
+  "unsupported": ["vpr", "wrecc_operations", "exclusive_access", "hot_reset", "multiple_clock_domains", "actual_service_completion"],
+  "must_confirm_with_mc": ["length_encoding", "address_unit", "partial_write_mask_polarity", "priority_mode", "pointer_encoding_and_reuse", "posted_write_responsibility", "command_latency", "wrecc_credit", "error_timing"]
+}

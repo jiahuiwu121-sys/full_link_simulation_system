@@ -42,8 +42,14 @@ bash env/run_profile_sweep.sh configs/system/llm8b-4axi512-ucie64-hbm3.json
 | coralnpu | NPU硬件、RTL仿真与在线AXI适配 |
 | protocol/include | 两端共享的AoU帧格式 |
 | storage_bridge | 存储侧 AoU/FDI 到 HIF 的 RTL、描述符/写数据缓存、事务跟踪及独立回归 |
+| ucie_mc_bridge | 独立的 FDI→新 MC HIF RTL 桥；token、pointer、MC信用、读返回重组及验证模型 |
 
 独立内存模拟器位于 [`ramulator2/`](ramulator2/README.md)，包含 HBM3/HBM3E、HBM4、LPDDR5、LPDDR6 及 DRAMPower 功耗模型，其构建和使用说明见该目录 README。全链路默认在线后端为 `ramulator2`；接入契约、配置和验收见[在线后端说明](docs/ramulator-integration.md)。
+
+面向另一个独立MC的新桥位于 [`ucie_mc_bridge/`](ucie_mc_bridge/README.md)，与现有
+`storage_bridge` 并列且RTL源码/构建独立。`bash env/run_ucie_mc_bridge_validation.sh`
+验证FDI↔新HIF模型，`bash env/build_ucie_mc_bridge.sh`导出裸接口顶层模型。
+当前MC尚缺，报告明确标记模型验证，不代表真实MC兼容性、功耗或PPA；原Ramulator路径保持不变。
 
 整体架构、核心文件职责、上下游接口及一次访存的完整路径见[当前系统解读](docs/code-reading/09-current-system-walkthrough.md)。[当前全文件清单](docs/code-reading/current-file-map.csv)包含主仓库与已初始化的 Vortex 递归依赖；核心文件人工说明与其余文件的静态目录分类分别标记。
 

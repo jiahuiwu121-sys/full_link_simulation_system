@@ -1,0 +1,42 @@
+{
+  "schema": "ucie-mc-bridge.rtl-config.v1",
+  "contract_profile": "waveform-demo",
+  "parameters": {
+    "RESOURCE_PLANES": 1,
+    "REQUEST_SLOTS": 4,
+    "CHILD_SLOTS": 32,
+    "MAX_BURST_BYTES": 4096,
+    "WDATA_GRANULES": 64,
+    "TX_FLUSH_CYCLES": 2,
+    "INITIAL_LPR": 24,
+    "INITIAL_HPR": 8,
+    "INITIAL_WR": 32,
+    "POSTED_WRITE_ACK": 0,
+    "TWO_WORD_COMMANDS": 1,
+    "LENGTH_ONE": 0,
+    "LENGTH_TWO": 1,
+    "MASK_ONE_WRITES": 1,
+    "HPR_CODE": 2,
+    "COMMAND_LATENCY": 0,
+    "AUTO_PRECHARGE": 0
+  },
+  "parameter_help": {
+    "RESOURCE_PLANES": "1..4；逻辑资源平面数，不是DRAM channel数量",
+    "REQUEST_SLOTS": "1..16；每RP每方向请求槽，2*RP*SLOTS必须不大于64",
+    "CHILD_SLOTS": "1..256；滑动窗口中的MC子命令槽，同时决定pointer请求队列容量",
+    "MAX_BURST_BYTES": "32..4096，32的倍数；每个parent的存储预留，仍不允许跨4KiB",
+    "WDATA_GRANULES": "8..4096；每RP的早到W接收窗口，granule=5B协议占用",
+    "TX_FLUSH_CYCLES": "1..64；部分FDI帧的刷新等待周期；测试台固定为8",
+    "INITIAL_LPR": "0..65535；必须匹配MC初始化信用；24仅为示例",
+    "INITIAL_HPR": "0..65535；必须匹配MC初始化信用；8仅为示例",
+    "INITIAL_WR": "0..65535；必须匹配MC初始化信用；32仅为示例",
+    "POSTED_WRITE_ACK": "0/1；默认0拒绝写，只有明确MC接收后的责任与排序契约才开启1",
+    "TWO_WORD_COMMANDS": "0/1；是否合并为双word命令，单word=32B",
+    "LENGTH_ONE": "0/1；单word命令编码，须与LENGTH_TWO不同",
+    "LENGTH_TWO": "0/1；双word命令编码，须MC确认",
+    "MASK_ONE_WRITES": "0/1；1表示MC mask=1写字节，0反相；须MC确认",
+    "HPR_CODE": "1或2；区分单bit波形与双bit接口模式，当前模型使用2",
+    "COMMAND_LATENCY": "0..2047；原样驱动MC latency属性，绝非统计延迟；0为待确认示例",
+    "AUTO_PRECHARGE": "0/1；驱动MC命令autopre属性，须MC确认"
+  }
+}
